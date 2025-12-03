@@ -5,11 +5,13 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position},
     style::{Color, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    text::{Line, Text},
+    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
-use rocraters::ro_crate::{read::load_remote, rocrate::RoCrate, write::is_not_url};
+use rocraters::ro_crate::{rocrate::RoCrate, write::is_not_url};
+
+use crate::error::TuiError;
 
 /// App holds the state of the application
 pub struct App {
@@ -24,7 +26,7 @@ pub struct App {
 
     /// ROCrate
     view: String,
-    state: Vec<(PathBuf, RoCrate)>,
+    state: Vec<(String, RoCrate)>,
     cursor: usize,
 
     /// Scrolling state
@@ -116,6 +118,16 @@ impl App {
     }
 
     fn submit_message(&mut self) {
+        if let Err(err) = self.handle_commands() {
+            self.view = err.to_string();
+        }
+
+        self.history.push(self.input.clone());
+        self.input.clear();
+        self.reset_cursor();
+    }
+
+    fn handle_commands(&mut self) -> Result<(), TuiError> {
         let (cmd, arg) = self.input.split_once(' ').unwrap_or((&self.input, ""));
         match (cmd, arg) {
             ("load", path) => {
@@ -127,54 +139,32 @@ impl App {
                     };
                     rocraters::ro_crate::read::read_crate(&crate_path, 0)
                 } else {
-                    let Ok(url) = url::Url::parse(path) else {
-                        self.view = format!("Invalid url provided: {path}");
-                        return;
-                    };
+                    let url = url::Url::parse(path)?;
                     rocraters::ro_crate::read::load_remote(url, 0)
                 };
-                match rocrate {
-                    Ok(rocrate) => {
-                        self.state.push((PathBuf::from(path), rocrate));
-                        self.view = "Loaded crate ...".to_string();
-                        self.cursor = self.state.len() - 1;
-                    }
-                    Err(err) => {
-                        self.view = format!(
-                            "
 
-{err:?}
-
-"
-                        );
-                    }
+                self.state.push((path.to_string(), rocrate?));
+                self.view = "Loaded crate ...".to_string();
+                self.cursor = self.state.len() - 1;
+            }
+            ("ls", _) => {
+                if let Some(rocrate) = self.state.get(self.cursor) {
+                    self.view = serde_json::to_string_pretty(rocrate)?;
+                } else {
+                    return Err(TuiError::NoState);
                 }
             }
-            ("ls", _) => match self.state.get(self.cursor) {
-                Some(rocrate) => {
-                    self.view = match serde_json::to_string_pretty(rocrate) {
-                        Ok(prettyfied) => prettyfied,
-                        Err(err) => format!("{err:?}"),
-                    };
-                }
-                None => {
-                    self.view = format!("No crate loaded yet");
-                }
-            },
             ("get", id) => match self.state.get(self.cursor) {
                 Some((_, rocrate)) => match rocrate.get_entity(id) {
                     Some(entity) => {
-                        self.view = match serde_json::to_string_pretty(entity) {
-                            Ok(prettyfied) => prettyfied,
-                            Err(err) => format!("{err:?}"),
-                        };
+                        self.view = serde_json::to_string_pretty(entity)?;
                     }
                     None => {
-                        self.view = format!("Nothing found for id: {}", id);
+                        return Err(TuiError::IdNotFound(id.to_string()));
                     }
                 },
                 None => {
-                    self.view = format!("No crate loaded yet");
+                    return Err(TuiError::NoState);
                 }
             },
             ("cd", subcrate_id) => {
@@ -192,7 +182,7 @@ impl App {
                         // This is only a hacky way of checking if subcrate was already loaded
                         if let Some(already_loaded_idx) =
                             self.state.iter().enumerate().find_map(|(idx, (p, _))| {
-                                if p.to_string_lossy().to_string().contains(subcrate_id) {
+                                if p.contains(subcrate_id) {
                                     Some(idx)
                                 } else {
                                     None
@@ -201,40 +191,50 @@ impl App {
                         {
                             self.view = format!("Loaded subcrate {subcrate_id}");
                             self.cursor = already_loaded_idx;
-                            return;
+                            return Ok(());
                         }
-                        if let Some((upperpath, _)) = self.state.get(self.cursor) {
-                            let (subdir, subpath) = if upperpath.to_str().unwrap().ends_with('/') {
+
+                        let (subdir, subcrate) = if is_not_url(subcrate_id) {
+                            if let Some((upperpath, _)) = self.state.get(self.cursor) {
+                                let (subdir, subpath) = if upperpath.ends_with('/') {
+                                    (
+                                        format!("{upperpath}{subcrate_id}"),
+                                        format!("{upperpath}{subcrate_id}ro-crate-metadata.json"),
+                                    )
+                                } else {
+                                    (
+                                        format!("{upperpath}/{subcrate_id}"),
+                                        format!("{upperpath}/{subcrate_id}/ro-crate-metadata.json",),
+                                    )
+                                };
                                 (
-                                    upperpath.join(subcrate_id),
-                                    upperpath
-                                        .join(format!("{}ro-crate-metadata.json", subcrate_id)),
+                                    subdir,
+                                    rocraters::ro_crate::read::read_crate(
+                                        &PathBuf::from(&subpath),
+                                        0,
+                                    ),
                                 )
                             } else {
-                                (
-                                    upperpath.join(format!("/{}", subcrate_id)),
-                                    upperpath
-                                        .join(format!("{}/ro-crate-metadata.json", subcrate_id)),
-                                )
-                            };
-                            match rocraters::ro_crate::read::read_crate(&subpath, 0) {
-                                Ok(subcrate) => {
-                                    self.state.push((subdir, subcrate));
-                                    self.view = format!("Loaded subcrate {subcrate_id}");
-                                    self.cursor = self.state.len() - 1;
-                                }
-                                Err(err) => {
-                                    self.view = format!("{err:?}\n{subpath:?}");
-                                }
+                                return Err(TuiError::IdNotFound(subcrate_id.to_string()));
                             }
-                        }
+                        } else {
+                            let url =
+                                url::Url::parse(&format!("{subcrate_id}ro-crate-metadata.json"))?;
+                            (
+                                url.to_string(),
+                                rocraters::ro_crate::read::load_remote(url, 0),
+                            )
+                        };
+                        self.state.push((subdir, subcrate?));
+                        self.view = format!("Loaded subcrate {subcrate_id}");
+                        self.cursor = self.state.len() - 1;
                     }
                 }
             }
             ("pwd", _) => {
                 self.view = match self.state.get(self.cursor) {
-                    Some((p, _)) => p.to_string_lossy().to_string(),
-                    None => "No crate loaded yet".to_string(),
+                    Some((p, _)) => p.to_string(),
+                    None => return Err(TuiError::NoState),
                 };
             }
             ("help", _) => {
@@ -277,9 +277,7 @@ Supported formats:
             }
         };
 
-        self.history.push(self.input.clone());
-        self.input.clear();
-        self.reset_cursor();
+        Ok(())
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {

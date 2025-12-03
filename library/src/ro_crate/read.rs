@@ -10,6 +10,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
+use thiserror::Error;
 
 /// Reads and deserialises an RO-Crate from a specified file path.
 ///
@@ -169,13 +170,18 @@ pub fn crate_path(path: &str) -> PathBuf {
 /// - `IoError`: Encapsulates errors related to input/output operations, typically file reading issues.
 /// - `JsonError`: Covers errors arising from parsing the crate's JSON content.
 /// - `VocabNotValid`: Indicates that the crate's keys did not validate against the expected vocabulary, including a message detailing the issue.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum CrateReadError {
-    IoError(io::Error),
-    JsonError(serde_json::Error),
+    #[error("io error {0}")]
+    IoError(#[from] io::Error),
+    #[error("json error {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("vocab not valid error {0}")]
     VocabNotValid(String),
+    #[error("schema not valid error {0}")]
     SchemaError(String),
-    ReqwestError(reqwest::Error),
+    #[error("request error {0}")]
+    ReqwestError(#[from] reqwest::Error),
 }
 
 impl PartialEq for CrateReadError {
@@ -188,20 +194,6 @@ impl PartialEq for CrateReadError {
             (CrateReadError::VocabNotValid(a), CrateReadError::VocabNotValid(b)) => a == b,
             _ => false,
         }
-    }
-}
-
-impl From<io::Error> for CrateReadError {
-    /// Converts an `io::Error` into a `CrateReadError::IoError`.
-    fn from(err: io::Error) -> CrateReadError {
-        CrateReadError::IoError(err)
-    }
-}
-
-impl From<serde_json::Error> for CrateReadError {
-    /// Converts a `serde_json::Error` into a `CrateReadError::JsonError`.
-    fn from(err: serde_json::Error) -> CrateReadError {
-        CrateReadError::JsonError(err)
     }
 }
 

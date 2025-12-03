@@ -2,6 +2,7 @@ use color_eyre::Result;
 use user_input::App;
 
 mod user_input;
+pub mod error;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
