@@ -176,8 +176,43 @@ impl App {
                     }
                 }
             }
+            ("help", _) => {
+                self.view = format!(
+                    "Commands:
+  load <url|path>    Load RO-Crate from URL or .zip file
+  ls                 List hasPart of current dataset/folder
+  ls -a              List all entities (data + contextual)
+  get <@id>          Pretty-print JSON for entity
+  cd <id>            Enter subcrate or folder
+  cd ..              Return to parent
+  cd /               Return to root crate
+  pwd                Print current path
+  help               Show this message
+Supported formats:
+  - .zip archives containing ro-crate-metadata.json
+  - Direct URLs to RO-Crate archives
+  - DOIs resolving to Zenodo/similar repositories"
+                );
+            }
             (cmd, arg) => {
-                self.view = format!("Unkown command: {cmd} {arg}");
+                self.view = format!(
+                    "Unkown command: {cmd} {arg}
+
+Commands:
+  load <url|path>    Load RO-Crate from URL or .zip file
+  ls                 List hasPart of current dataset/folder
+  ls -a              List all entities (data + contextual)
+  get <@id>          Pretty-print JSON for entity
+  cd <id>            Enter subcrate or folder
+  cd ..              Return to parent
+  cd /               Return to root crate
+  pwd                Print current path
+  help               Show this message
+Supported formats:
+  - .zip archives containing ro-crate-metadata.json
+  - Direct URLs to RO-Crate archives
+  - DOIs resolving to Zenodo/similar repositories"
+                );
             }
         };
 
