@@ -18,6 +18,7 @@ doctest = false
 [workspace]
 members = [
     "cli",
+    "tui",
 ]
 
 [dependencies]
