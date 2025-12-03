@@ -27,6 +27,7 @@ reqwest = { workspace = true }
 dirs = "6.0.0"
 polars = { version = "0.52.0", features =["parquet"], optional = true }
 thiserror = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.9"

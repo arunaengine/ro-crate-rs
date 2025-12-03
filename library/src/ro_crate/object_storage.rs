@@ -1,3 +1,5 @@
+use log::debug;
+
 use crate::ro_crate::rocrate::RoCrate;
 use crate::ro_crate::write::is_not_url;
 
@@ -32,7 +34,7 @@ pub fn relative_to_object_store(rocrate: &mut RoCrate, object_root: &str) {
                     let root = object_root.to_string();
                     entity.id = root + &entity.id
                 };
-                println!("Entity ID => {} ", entity);
+                debug!("Entity ID => {} ", entity);
             }
         }
     }

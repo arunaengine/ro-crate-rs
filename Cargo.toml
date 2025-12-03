@@ -28,6 +28,7 @@ walkdir = "2"
 reqwest = { version = "0.12", features =  ["blocking", "json"] }
 dirs = "6.0.0"
 thiserror = "2.0.17"
+log = "0.4.29"
 
 [workspace.dev-dependencies]
 tempfile = "3.9"
