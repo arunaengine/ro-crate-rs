@@ -1,4 +1,3 @@
-use crate::ro_crate::read::read_crate;
 use crate::ro_crate::rocrate::RoCrate;
 use crate::ro_crate::write::is_not_url;
 

@@ -175,6 +175,7 @@ pub enum CrateReadError {
     JsonError(serde_json::Error),
     VocabNotValid(String),
     SchemaError(String),
+    ReqwestError(reqwest::Error),
 }
 
 impl PartialEq for CrateReadError {
@@ -300,6 +301,15 @@ pub fn parse_zip(zip_path: &str, validation_level: i8) -> Result<RoCrate, CrateR
         }
         Err(e) => Err(CrateReadError::from(e)),
     }
+}
+
+pub fn load_remote(url: url::Url, validation_level: i8) -> Result<RoCrate, CrateReadError> {
+    let content = reqwest::blocking::get(url)
+        .map_err(|e| CrateReadError::ReqwestError(e))?
+        .text()
+        .map_err(|e| CrateReadError::ReqwestError(e))?;
+
+    read_crate_obj(&content, validation_level)
 }
 
 pub enum ValidationResult {

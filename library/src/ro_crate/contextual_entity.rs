@@ -79,8 +79,6 @@ impl ContextualEntity {
     }
     pub fn get_linked_ids(&self) -> Vec<Id> {
         let mut ids = Vec::new();
-
-
         // Check for Id in the dynamic entity
         if let Some(dynamic_entity) = &self.dynamic_entity {
             for value in dynamic_entity.values() {
@@ -120,7 +118,6 @@ impl ContextualEntity {
             _ => {}
         }
     }
-
 }
 
 /// Enables custom serialisation of known struct fields

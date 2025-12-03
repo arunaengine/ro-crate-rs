@@ -6,10 +6,10 @@ use ratatui::{
     layout::{Constraint, Layout, Position},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph},
+    widgets::{Block, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
-use rocraters::ro_crate::rocrate::RoCrate;
+use rocraters::ro_crate::{read::load_remote, rocrate::RoCrate, write::is_not_url};
 
 /// App holds the state of the application
 pub struct App {
@@ -26,11 +26,18 @@ pub struct App {
     view: String,
     state: Vec<(PathBuf, RoCrate)>,
     cursor: usize,
+
+    /// Scrolling state
+    vertical_scroll_state: ScrollbarState,
+    horizontal_scroll_state: ScrollbarState,
+    vertical_scroll: usize,
+    horizontal_scroll: usize,
 }
 
 enum InputMode {
     Normal,
     Editing,
+    Scrolling,
 }
 
 impl App {
@@ -43,6 +50,10 @@ impl App {
             state: vec![],
             view: String::new(),
             cursor: 0,
+            vertical_scroll: 0,
+            horizontal_scroll: 0,
+            vertical_scroll_state: ScrollbarState::new(0),
+            horizontal_scroll_state: ScrollbarState::new(0),
         }
     }
 
@@ -108,19 +119,34 @@ impl App {
         let (cmd, arg) = self.input.split_once(' ').unwrap_or((&self.input, ""));
         match (cmd, arg) {
             ("load", path) => {
-                let crate_path = if path.ends_with('/') {
-                    PathBuf::from(format!("{}ro-crate-metadata.json", path))
+                let rocrate = if is_not_url(path) {
+                    let crate_path = if path.ends_with('/') {
+                        PathBuf::from(format!("{}ro-crate-metadata.json", path))
+                    } else {
+                        PathBuf::from(format!("{}/ro-crate-metadata.json", path))
+                    };
+                    rocraters::ro_crate::read::read_crate(&crate_path, 0)
                 } else {
-                    PathBuf::from(format!("{}/ro-crate-metadata.json", path))
+                    let Ok(url) = url::Url::parse(path) else {
+                        self.view = format!("Invalid url provided: {path}");
+                        return;
+                    };
+                    rocraters::ro_crate::read::load_remote(url, 0)
                 };
-                match rocraters::ro_crate::read::read_crate(&crate_path, 0) {
+                match rocrate {
                     Ok(rocrate) => {
                         self.state.push((PathBuf::from(path), rocrate));
                         self.view = "Loaded crate ...".to_string();
                         self.cursor = self.state.len() - 1;
                     }
                     Err(err) => {
-                        self.view = format!("{err:?}");
+                        self.view = format!(
+                            "
+
+{err:?}
+
+"
+                        );
                     }
                 }
             }
@@ -152,29 +178,64 @@ impl App {
                 }
             },
             ("cd", subcrate_id) => {
-                if let Some((upperpath, _)) = self.state.get(self.cursor) {
-                    let (subdir, subpath) = if upperpath.to_str().unwrap().ends_with('/') {
-                        (
-                            upperpath.join(subcrate_id),
-                            upperpath.join(format!("{}ro-crate-metadata.json", subcrate_id)),
-                        )
-                    } else {
-                        (
-                            upperpath.join(format!("/{}", subcrate_id)),
-                            upperpath.join(format!("{}/ro-crate-metadata.json", subcrate_id)),
-                        )
-                    };
-                    match rocraters::ro_crate::read::read_crate(&subpath, 0) {
-                        Ok(subcrate) => {
-                            self.state.push((subdir, subcrate));
+                match subcrate_id {
+                    ".." => {
+                        self.view = format!("Changed to upper level");
+                        self.cursor -= 1;
+                    }
+                    "/" => {
+                        self.view = format!("Changed to root level");
+                        self.cursor = 0;
+                    }
+                    _ => {
+                        // TODO: Improve!
+                        // This is only a hacky way of checking if subcrate was already loaded
+                        if let Some(already_loaded_idx) =
+                            self.state.iter().enumerate().find_map(|(idx, (p, _))| {
+                                if p.to_string_lossy().to_string().contains(subcrate_id) {
+                                    Some(idx)
+                                } else {
+                                    None
+                                }
+                            })
+                        {
                             self.view = format!("Loaded subcrate {subcrate_id}");
-                            self.cursor = self.state.len() - 1;
+                            self.cursor = already_loaded_idx;
+                            return;
                         }
-                        Err(err) => {
-                            self.view = format!("{err:?}\n{subpath:?}");
+                        if let Some((upperpath, _)) = self.state.get(self.cursor) {
+                            let (subdir, subpath) = if upperpath.to_str().unwrap().ends_with('/') {
+                                (
+                                    upperpath.join(subcrate_id),
+                                    upperpath
+                                        .join(format!("{}ro-crate-metadata.json", subcrate_id)),
+                                )
+                            } else {
+                                (
+                                    upperpath.join(format!("/{}", subcrate_id)),
+                                    upperpath
+                                        .join(format!("{}/ro-crate-metadata.json", subcrate_id)),
+                                )
+                            };
+                            match rocraters::ro_crate::read::read_crate(&subpath, 0) {
+                                Ok(subcrate) => {
+                                    self.state.push((subdir, subcrate));
+                                    self.view = format!("Loaded subcrate {subcrate_id}");
+                                    self.cursor = self.state.len() - 1;
+                                }
+                                Err(err) => {
+                                    self.view = format!("{err:?}\n{subpath:?}");
+                                }
+                            }
                         }
                     }
                 }
+            }
+            ("pwd", _) => {
+                self.view = match self.state.get(self.cursor) {
+                    Some((p, _)) => p.to_string_lossy().to_string(),
+                    None => "No crate loaded yet".to_string(),
+                };
             }
             ("help", _) => {
                 self.view = format!(
@@ -234,6 +295,9 @@ Supported formats:
                         KeyCode::Char('q') => {
                             return Ok(());
                         }
+                        KeyCode::Char('v') => {
+                            self.input_mode = InputMode::Scrolling;
+                        }
                         _ => {}
                     },
                     InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
@@ -245,13 +309,41 @@ Supported formats:
                         KeyCode::Esc => self.input_mode = InputMode::Normal,
                         _ => {}
                     },
+                    InputMode::Scrolling if key.kind == KeyEventKind::Press => match key.code {
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            self.vertical_scroll = self.vertical_scroll.saturating_add(1);
+                            self.vertical_scroll_state =
+                                self.vertical_scroll_state.position(self.vertical_scroll);
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
+                            self.vertical_scroll_state =
+                                self.vertical_scroll_state.position(self.vertical_scroll);
+                        }
+                        KeyCode::Char('h') | KeyCode::Left => {
+                            self.horizontal_scroll = self.horizontal_scroll.saturating_sub(1);
+                            self.horizontal_scroll_state = self
+                                .horizontal_scroll_state
+                                .position(self.horizontal_scroll);
+                        }
+                        KeyCode::Char('l') | KeyCode::Right => {
+                            self.horizontal_scroll = self.horizontal_scroll.saturating_add(1);
+                            self.horizontal_scroll_state = self
+                                .horizontal_scroll_state
+                                .position(self.horizontal_scroll);
+                        }
+                        KeyCode::Esc => self.input_mode = InputMode::Normal,
+                        _ => {}
+                    },
+
                     InputMode::Editing => {}
+                    _ => {}
                 }
             }
         }
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(3),
@@ -265,6 +357,8 @@ Supported formats:
                     "Press ".into(),
                     "q".bold(),
                     " to exit, ".into(),
+                    "v".bold(),
+                    " to start scrolling, ".bold(),
                     "e".bold(),
                     " to start editing.".bold(),
                 ],
@@ -280,6 +374,23 @@ Supported formats:
                 ],
                 Style::default(),
             ),
+
+            InputMode::Scrolling => (
+                vec![
+                    "Press ".into(),
+                    "Esc".bold(),
+                    " to stop scrolling, ".into(),
+                    "h".bold(),
+                    " to scroll left, ".into(),
+                    "l".bold(),
+                    " to scroll right, ".into(),
+                    "j".bold(),
+                    " to scroll down, ".into(),
+                    "k".bold(),
+                    " to scroll up.".into(),
+                ],
+                Style::default(),
+            ),
         };
         let text = Text::from(Line::from(msg)).patch_style(style);
         let help_message = Paragraph::new(text);
@@ -289,13 +400,11 @@ Supported formats:
             .style(match self.input_mode {
                 InputMode::Normal => Style::default(),
                 InputMode::Editing => Style::default().fg(Color::Yellow),
+                InputMode::Scrolling => Style::default(),
             })
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
         match self.input_mode {
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            InputMode::Normal => {}
-
             // Make the cursor visible and ask ratatui to put it at the specified coordinates after
             // rendering
             #[allow(clippy::cast_possible_truncation)]
@@ -306,6 +415,9 @@ Supported formats:
                 // Move one line down, from the border to the input line
                 input_area.y + 1,
             )),
+
+            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+            _ => {}
         }
 
         let title = format!(
@@ -313,7 +425,35 @@ Supported formats:
             self.history.last().cloned().unwrap_or(String::new())
         );
 
-        let view = Paragraph::new(self.view.clone()).block(Block::bordered().title(title));
+        let style = if matches!(self.input_mode, InputMode::Scrolling) {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+
+        let mut horizontal_len = 0;
+        let mut vertical_len = 0;
+        for line in self.view.lines() {
+            vertical_len += 1;
+            if line.len() > horizontal_len {
+                horizontal_len = line.len()
+            };
+        }
+
+        self.vertical_scroll_state = self.vertical_scroll_state.content_length(vertical_len);
+        self.horizontal_scroll_state = self.horizontal_scroll_state.content_length(horizontal_len);
+
+        let view = Paragraph::new(self.view.clone())
+            .block(Block::bordered().title(title).style(style))
+            .style(style)
+            .scroll((self.vertical_scroll as u16, 0));
         frame.render_widget(view, view_area);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            view_area,
+            &mut self.vertical_scroll_state,
+        );
     }
 }

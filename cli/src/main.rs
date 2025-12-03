@@ -20,7 +20,7 @@ use serde_json::Value as JsonValue;
 use serde_json::{json, to_string_pretty};
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tabled::settings::{object::Rows, Style, Width};
 use write::{write_crate, zip_crate};
 pub mod args;
@@ -30,6 +30,9 @@ fn main() {
 
     match args.crate_action {
         CrateAction::Init(init_command) => {
+            if let Some(path) = init_command.path {
+                std::env::set_current_dir(Path::new(&path)).unwrap();
+            }
             if init_command.minimal {
                 let mut rocrate = RoCrate::default();
                 rocrate = create_default_crate(rocrate);
@@ -165,7 +168,7 @@ fn main() {
                     println!("{}", to_string_pretty(&rocrate).unwrap());
                 } else {
                     match to_string_pretty(&rocrate) {
-                        Ok(json_ld) => {
+                        Ok(_json_ld) => {
                             let mut table = json_to_table(&json!(&rocrate.graph)).into_table();
                             table.with(Style::modern_rounded());
                             if read_crate_command.fit {
@@ -274,7 +277,7 @@ fn main() {
             ValidateCommand::Basic(basic) => {
                 let crate_name = crate_path(&basic.target_crate);
                 match read_crate(&crate_name, 2) {
-                    Ok(rocrate) => println!("Crate Valid"),
+                    Ok(_rocrate) => println!("Crate Valid"),
                     Err(e) => println!("Crate not valid: {:?}", e),
                 }
             }

@@ -47,6 +47,9 @@ pub struct InitCommand {
     /// Initialise with default minimal entites or leave empty
     #[clap(short, long)]
     pub minimal: bool,
+    /// Path to directory to initialize
+    #[clap(short, long)]
+    pub path: Option<String>,
 }
 
 // Create a detailed help message

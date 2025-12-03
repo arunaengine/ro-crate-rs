@@ -453,7 +453,7 @@ fn get_noncontained_paths(
             let path = match Path::new(id).canonicalize() {
                 Ok(resolved) => Ok(resolved),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(resolve_tilde_path(id)),
-                Err(e) => Err(continue),
+                Err(e) => Err(continue), // TODO?
             };
             println!("Pre Resolved path: {:?}", path);
             let resolved_path = rocrate_path.join(path.unwrap()).canonicalize();
@@ -653,6 +653,7 @@ mod write_crate_tests {
         let zipped = zip_crate(&path, false, 0, false, false);
         println!("{:?}", zipped);
         let roc = parse_zip(path_zip.to_str().unwrap(), 0);
+        assert!(roc.is_ok())
     }
 
     #[test]
@@ -664,6 +665,7 @@ mod write_crate_tests {
         let zipped = zip_crate(&path, true, 0, false, false);
         println!("{:?}", zipped);
         let roc = parse_zip(path_zip.to_str().unwrap(), 0);
+        assert!(roc.is_ok())
     }
 
     #[test]

@@ -1,0 +1,32 @@
+[package]
+name = "rocraters"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+autoexamples = false
+description = "Library for creating, modifying and reading RO-Crates"
+keywords = ["researchobject","ro-crate","ro","metadata","jsonld"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+parquet = ["dep:polars"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { version = "0.4.31", features = ["serde"]}
+uuid = { version = "1.0", features = ["v4", "v7"] }
+rand = "0.9"
+url = "2.5"
+zip = "6.0.0"
+walkdir = "2"
+reqwest = { workspace = true }
+dirs = "6.0.0"
+polars = { version = "0.52.0", features =["parquet"], optional = true }
+
+[dev-dependencies]
+tempfile = "3.9"
+

@@ -269,7 +269,7 @@ mod write_crate_tests {
     #[test]
     fn test_get_context_from_key() {
         let path = fixture_path("_ro-crate-metadata-complex-context.json");
-        let mut rocrate = read_crate(&path, 0).unwrap();
+        let rocrate = read_crate(&path, 0).unwrap();
 
         let specific_context = rocrate.context.get_specific_context("education");
 

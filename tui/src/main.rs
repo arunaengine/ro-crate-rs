@@ -1,7 +1,6 @@
 use color_eyre::Result;
 use user_input::App;
 
-
 mod user_input;
 
 fn main() -> Result<()> {
