@@ -97,7 +97,7 @@ fn frame_context(crate_frame: &mut CrateFrame, context: &RoCrateContext) {
             crate_frame.push_data("@context", "ro-crate", reference);
         }
         RoCrateContext::EmbeddedContext(_embedded) => {
-            println!("legacy - shouldnt be used")
+            debug!("legacy - shouldnt be used")
         }
     }
 }
@@ -277,18 +277,18 @@ mod write_crate_tests {
     #[ignore]
     fn test_big_rocrate() {
         let path = Path::new("examples").join("ro-crate-metadata_big.json");
-        println!("Path created");
+        debug!("Path created");
         let mut rocrate = read_crate(&path, 0).unwrap();
-        println!("Crate loaded");
+        debug!("Crate loaded");
         rocrate.context.add_urn_uuid();
-        println!("UUID added");
+        debug!("UUID added");
         let mut df = to_df(&rocrate);
-        println!("Created dataframe");
+        debug!("Created dataframe");
         let path_csv = fixture_path("test-ro-crate.csv");
         let path_parquet = fixture_path("test-ro-crate.parquet");
         write_csv(&mut df, path_csv);
-        println!("CSV created");
+        debug!("CSV created");
         write_parquet(&mut df, path_parquet);
-        println!("Parquet created");
+        debug!("Parquet created");
     }
 }
