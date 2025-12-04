@@ -23,12 +23,12 @@ impl App {
                     rocraters::ro_crate::read::load_remote(url, 0)
                 }?;
 
-                self.subs = rocrate
+                self.completion.subs = rocrate
                     .get_subcrates()
                     .iter()
                     .map(|e| e.get_id().clone())
                     .collect();
-                self.ids = rocrate
+                self.completion.ids = rocrate
                     .get_all_ids()
                     .iter()
                     .map(|id| id.to_string())
@@ -154,12 +154,12 @@ impl App {
                             }
                         };
 
-                        self.subs = subcrate
+                        self.completion.subs = subcrate
                             .get_subcrates()
                             .iter()
                             .map(|e| e.get_id().clone())
                             .collect();
-                        self.ids = subcrate
+                        self.completion.ids = subcrate
                             .get_all_ids()
                             .iter()
                             .map(|id| id.to_string())

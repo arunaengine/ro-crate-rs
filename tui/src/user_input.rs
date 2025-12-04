@@ -19,14 +19,11 @@ pub struct App {
     pub input_mode: InputMode,
     /// History of recorded messages
     pub history: Vec<String>,
+    pub completion: CompletionState,
 
     /// ROCrate
     /// View of the current item
     pub view: String,
-    /// All subcrates of the current rocrate
-    pub subs: Vec<String>,
-    /// All ids referenced in the current rocrate
-    pub ids: Vec<String>,
     /// All loaded rocrates
     pub state: Vec<(String, RoCrate)>,
     /// Cursor pointing to the current entry in state
@@ -39,6 +36,14 @@ pub struct App {
     pub horizontal_scroll: usize,
 }
 
+#[derive(Default)]
+pub struct CompletionState {
+    pub subs_idx: usize,
+    pub subs: Vec<String>,
+    pub ids_idx: usize,
+    pub ids: Vec<String>,
+}
+
 pub enum InputMode {
     Normal,
     Editing,
@@ -46,15 +51,14 @@ pub enum InputMode {
 }
 
 impl App {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             input: String::new(),
             input_mode: InputMode::Normal,
             history: Vec::new(),
             character_index: 0,
             state: vec![],
-            subs: vec![],
-            ids: vec![],
+            completion: CompletionState::default(),
             view: String::new(),
             cursor: 0,
             vertical_scroll: 0,
@@ -78,6 +82,37 @@ impl App {
         let index = self.byte_index();
         self.input.insert(index, new_char);
         self.move_cursor_right();
+    }
+
+    fn complete_command(&mut self) {
+        if self.input.contains("cd") {
+            if self.completion.subs.len() > self.completion.subs_idx {
+                self.completion.subs_idx += 1;
+            } else {
+                self.completion.subs_idx = 0;
+            }
+            self.input = format!(
+                "cd {}",
+                self.completion
+                    .subs
+                    .get(self.completion.subs_idx)
+                    .unwrap_or(&"".to_string())
+            )
+        } else if self.input.contains("get") {
+            if self.completion.ids.len() > self.completion.ids_idx {
+                self.completion.ids_idx += 1;
+            } else {
+                self.completion.ids_idx = 0;
+            }
+
+            self.input = format!(
+                "get {}",
+                self.completion
+                    .ids
+                    .get(self.completion.ids_idx)
+                    .unwrap_or(&"".to_string())
+            )
+        }
     }
 
     /// Returns the byte index based on the character position.
@@ -156,6 +191,7 @@ impl App {
                         KeyCode::Backspace => self.delete_char(),
                         KeyCode::Left => self.move_cursor_left(),
                         KeyCode::Right => self.move_cursor_right(),
+                        KeyCode::Tab => self.complete_command(),
                         KeyCode::Esc => self.input_mode = InputMode::Normal,
                         _ => {}
                     },
