@@ -1,10 +1,30 @@
 use std::path::PathBuf;
 
+use rocrate_indexer::SearchHit;
 use rocraters::ro_crate::constraints::EntityValue;
+use rocraters::ro_crate::rocrate::RoCrate;
 use rocraters::ro_crate::write::is_not_url;
+use serde::Serialize;
 
 use crate::error::TuiError;
 use crate::user_input::App;
+
+const HELP_MESSAGE: &'static str = "Commands:
+  load <url|path>    Load RO-Crate from URL or .zip file
+  ls                 Lists the full RO-Crate
+  ls sub             List all subcrates
+  ls ids             List all ids used in the RO-Crate
+  ls props           List all used properties in the RO-Crate
+  get <@id>          Pretty-print JSON for entity
+  cd <id>            Enter subcrate or folder
+  cd ..              Return to parent
+  cd /               Return to root crate
+  pwd                Print current path
+  help               Show this message
+Supported formats:
+  - .zip archives containing ro-crate-metadata.json
+  - Direct URLs to RO-Crate archives
+  - DOIs resolving to Zenodo/similar repositories";
 
 impl App {
     pub fn handle_commands(&mut self) -> Result<(), TuiError> {
@@ -23,19 +43,7 @@ impl App {
                     rocraters::ro_crate::read::load_remote(url, 0)
                 }?;
 
-                self.completion.subs = rocrate
-                    .get_subcrates()
-                    .iter()
-                    .map(|e| e.get_id().clone())
-                    .collect();
-                self.completion.ids = rocrate
-                    .get_all_ids()
-                    .iter()
-                    .map(|id| id.to_string())
-                    .collect();
-                self.state.push((path.to_string(), rocrate));
-                self.view = "Loaded crate ...".to_string();
-                self.cursor = self.state.len() - 1;
+                self.import_crate_state(path.to_string(), rocrate)?;
             }
             ("ls", option) => {
                 if let Some(rocrate) = self.state.get(self.cursor) {
@@ -103,70 +111,9 @@ impl App {
                             return Ok(());
                         }
 
-                        let (subdir, subcrate) = if is_not_url(subcrate_id) {
-                            if let Some((_, parent)) = self.state.get(self.cursor) {
-                                let (_, subcrate_path) = parent
-                                    .get_entity(subcrate_id)
-                                    .ok_or_else(|| TuiError::IdNotFound(subcrate_id.to_string()))?
-                                    .get_specific_property("subjectOf")
-                                    .ok_or_else(|| {
-                                        TuiError::PropertyNotFound("subjectOf".to_string())
-                                    })?;
+                        let (subdir, subcrate) = self.get_subcrate_with_path(subcrate_id)?;
 
-                                let EntityValue::EntityId(
-                                    rocraters::ro_crate::constraints::Id::Id(subcrate_path),
-                                ) = subcrate_path
-                                else {
-                                    return Err(TuiError::PropertyNotFound("@id".to_string()));
-                                };
-                                (
-                                    subcrate_id.to_string(),
-                                    rocraters::ro_crate::read::read_crate(
-                                        &PathBuf::from(&subcrate_path.to_string()),
-                                        0,
-                                    )?,
-                                )
-                            } else {
-                                return Err(TuiError::IdNotFound(subcrate_id.to_string()));
-                            }
-                        } else {
-                            if let Some((_, parent)) = self.state.get(self.cursor) {
-                                let (_, subcrate_url) = parent
-                                    .get_entity(subcrate_id)
-                                    .ok_or_else(|| TuiError::IdNotFound(subcrate_id.to_string()))?
-                                    .get_specific_property("subjectOf")
-                                    .ok_or_else(|| {
-                                        TuiError::PropertyNotFound("subjectOf".to_string())
-                                    })?;
-                                let EntityValue::EntityId(
-                                    rocraters::ro_crate::constraints::Id::Id(subcrate_url),
-                                ) = subcrate_url
-                                else {
-                                    return Err(TuiError::PropertyNotFound("@id".to_string()));
-                                };
-                                let url = url::Url::parse(&subcrate_url.to_string())?;
-                                (
-                                    url.to_string(),
-                                    rocraters::ro_crate::read::load_remote(url, 0)?,
-                                )
-                            } else {
-                                return Err(TuiError::IdNotFound(subcrate_id.to_string()));
-                            }
-                        };
-
-                        self.completion.subs = subcrate
-                            .get_subcrates()
-                            .iter()
-                            .map(|e| e.get_id().clone())
-                            .collect();
-                        self.completion.ids = subcrate
-                            .get_all_ids()
-                            .iter()
-                            .map(|id| id.to_string())
-                            .collect();
-                        self.state.push((subdir, subcrate));
-                        //self.view = format!("Loaded subcrate {subcrate_id}");
-                        self.cursor = self.state.len() - 1;
+                        self.import_crate_state(subdir, subcrate)?;
                     }
                 }
             }
@@ -176,50 +123,104 @@ impl App {
                     None => return Err(TuiError::NoState),
                 };
             }
+            ("search", query) => {
+                // TODO: Improve showing search results
+                let mut results = vec![];
+                for SearchHit {
+                    entity_id,
+                    crate_id,
+                    ..
+                } in self.idxer.search(query, 100)?
+                {
+                    if let Some(rocrate) = self.idxer.get_crate(&crate_id) {
+                        if let Some(hit) = rocrate.get_entity(&entity_id) {
+                            results.push((crate_id, hit));
+                        }
+                    }
+                }
+                self.view = serde_json::to_string_pretty(&results)?;
+            }
             ("help", _) => {
-                self.view = format!(
-                    "Commands:
-  load <url|path>    Load RO-Crate from URL or .zip file
-  ls                 Lists the full RO-Crate
-  ls sub             List all subcrates
-  ls ids             List all ids used in the RO-Crate
-  ls props           List all used properties in the RO-Crate
-  get <@id>          Pretty-print JSON for entity
-  cd <id>            Enter subcrate or folder
-  cd ..              Return to parent
-  cd /               Return to root crate
-  pwd                Print current path
-  help               Show this message
-Supported formats:
-  - .zip archives containing ro-crate-metadata.json
-  - Direct URLs to RO-Crate archives
-  - DOIs resolving to Zenodo/similar repositories"
-                );
+                self.view = HELP_MESSAGE.to_string();
             }
             (cmd, arg) => {
                 self.view = format!(
                     "Unkown command: {cmd} {arg}
 
-Commands:
-  load <url|path>    Load RO-Crate from URL or .zip file
-  ls                 Lists the full RO-Crate
-  ls sub             List all subcrates
-  ls ids             List all ids used in the RO-Crate
-  ls props           List all used properties in the RO-Crate
-  get <@id>          Pretty-print JSON for entity
-  cd <id>            Enter subcrate or folder
-  cd ..              Return to parent
-  cd /               Return to root crate
-  pwd                Print current path
-  help               Show this message
-Supported formats:
-  - .zip archives containing ro-crate-metadata.json
-  - Direct URLs to RO-Crate archives
-  - DOIs resolving to Zenodo/similar repositories"
+{}",
+                    HELP_MESSAGE
                 );
             }
         };
 
         Ok(())
+    }
+
+    pub fn import_crate_state(&mut self, path: String, rocrate: RoCrate) -> Result<(), TuiError> {
+        let _ = self
+            .idxer
+            .add_from_json(serde_json::to_string(&rocrate)?.as_str(), Some(&path))?;
+        self.completion.subs = rocrate
+            .get_subcrates()
+            .iter()
+            .map(|e| e.get_id().clone())
+            .collect();
+        self.completion.ids = rocrate
+            .get_all_ids()
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
+        self.state.push((path, rocrate));
+        self.view = "Loaded crate ...".to_string();
+        self.cursor = self.state.len() - 1;
+        Ok(())
+    }
+
+    pub fn get_subcrate_with_path(&self, subcrate_id: &str) -> Result<(String, RoCrate), TuiError> {
+        let (subdir, subcrate) = if is_not_url(subcrate_id) {
+            if let Some((_, parent)) = self.state.get(self.cursor) {
+                let (_, subcrate_path) = parent
+                    .get_entity(subcrate_id)
+                    .ok_or_else(|| TuiError::IdNotFound(subcrate_id.to_string()))?
+                    .get_specific_property("subjectOf")
+                    .ok_or_else(|| TuiError::PropertyNotFound("subjectOf".to_string()))?;
+
+                let EntityValue::EntityId(rocraters::ro_crate::constraints::Id::Id(subcrate_path)) =
+                    subcrate_path
+                else {
+                    return Err(TuiError::PropertyNotFound("@id".to_string()));
+                };
+                (
+                    subcrate_id.to_string(),
+                    rocraters::ro_crate::read::read_crate(
+                        &PathBuf::from(&subcrate_path.to_string()),
+                        0,
+                    )?,
+                )
+            } else {
+                return Err(TuiError::IdNotFound(subcrate_id.to_string()));
+            }
+        } else {
+            if let Some((_, parent)) = self.state.get(self.cursor) {
+                let (_, subcrate_url) = parent
+                    .get_entity(subcrate_id)
+                    .ok_or_else(|| TuiError::IdNotFound(subcrate_id.to_string()))?
+                    .get_specific_property("subjectOf")
+                    .ok_or_else(|| TuiError::PropertyNotFound("subjectOf".to_string()))?;
+                let EntityValue::EntityId(rocraters::ro_crate::constraints::Id::Id(subcrate_url)) =
+                    subcrate_url
+                else {
+                    return Err(TuiError::PropertyNotFound("@id".to_string()));
+                };
+                let url = url::Url::parse(&subcrate_url.to_string())?;
+                (
+                    url.to_string(),
+                    rocraters::ro_crate::read::load_remote(url, 0)?,
+                )
+            } else {
+                return Err(TuiError::IdNotFound(subcrate_id.to_string()));
+            }
+        };
+        Ok((subdir, subcrate))
     }
 }

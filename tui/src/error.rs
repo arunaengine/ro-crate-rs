@@ -17,4 +17,6 @@ pub enum TuiError {
     PropertyNotFound(String),
     #[error("No such command `{0}`")]
     CommandNotFound(String),
+    #[error("Search error `{0}`")]
+    Search(#[from] rocrate_indexer::error::IndexError),
 }

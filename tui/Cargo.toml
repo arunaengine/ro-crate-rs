@@ -22,6 +22,7 @@ color-eyre = "0.6.5"
 crossterm = "0.29.0"
 ratatui = "0.29"
 thiserror = { workspace = true }
+rocrate-indexer = { git = "https://github.com/arunaengine/rocrate-indexer.git"}
 
 [[bin]]
 name = "rocraters"  

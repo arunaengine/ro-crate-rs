@@ -8,9 +8,11 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use rocraters::ro_crate::rocrate::RoCrate;
+use rocrate_indexer::CrateIndex;
 
 /// App holds the state of the application
 pub struct App {
+    pub idxer: CrateIndex,
     /// Current value of the input box
     pub input: String,
     /// Position of cursor in the editor area.
@@ -52,7 +54,9 @@ pub enum InputMode {
 
 impl App {
     pub fn new() -> Self {
+        let idxer = rocrate_indexer::CrateIndex::open_or_create().unwrap();
         Self {
+            idxer, 
             input: String::new(),
             input_mode: InputMode::Normal,
             history: Vec::new(),
