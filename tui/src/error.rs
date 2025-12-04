@@ -13,4 +13,8 @@ pub enum TuiError {
     NoState,
     #[error("Id `{0}` not found")]
     IdNotFound(String),
+    #[error("Property `{0}` not found")]
+    PropertyNotFound(String),
+    #[error("No such command `{0}`")]
+    CommandNotFound(String),
 }

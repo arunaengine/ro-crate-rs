@@ -3,6 +3,7 @@ use user_input::App;
 
 mod user_input;
 pub mod error;
+pub mod commands;
 
 fn main() -> Result<()> {
     color_eyre::install()?;

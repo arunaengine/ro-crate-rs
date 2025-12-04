@@ -1,42 +1,45 @@
-use std::path::PathBuf;
-
 use color_eyre::Result;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Position},
+    layout::{Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
-use rocraters::ro_crate::{rocrate::RoCrate, write::is_not_url};
-
-use crate::error::TuiError;
+use rocraters::ro_crate::rocrate::RoCrate;
 
 /// App holds the state of the application
 pub struct App {
     /// Current value of the input box
-    input: String,
+    pub input: String,
     /// Position of cursor in the editor area.
-    character_index: usize,
+    pub character_index: usize,
     /// Current input mode
-    input_mode: InputMode,
+    pub input_mode: InputMode,
     /// History of recorded messages
-    history: Vec<String>,
+    pub history: Vec<String>,
 
     /// ROCrate
-    view: String,
-    state: Vec<(String, RoCrate)>,
-    cursor: usize,
+    /// View of the current item
+    pub view: String,
+    /// All subcrates of the current rocrate
+    pub subs: Vec<String>,
+    /// All ids referenced in the current rocrate
+    pub ids: Vec<String>,
+    /// All loaded rocrates
+    pub state: Vec<(String, RoCrate)>,
+    /// Cursor pointing to the current entry in state
+    pub cursor: usize,
 
     /// Scrolling state
-    vertical_scroll_state: ScrollbarState,
-    horizontal_scroll_state: ScrollbarState,
-    vertical_scroll: usize,
-    horizontal_scroll: usize,
+    pub vertical_scroll_state: ScrollbarState,
+    pub horizontal_scroll_state: ScrollbarState,
+    pub vertical_scroll: usize,
+    pub horizontal_scroll: usize,
 }
 
-enum InputMode {
+pub enum InputMode {
     Normal,
     Editing,
     Scrolling,
@@ -50,6 +53,8 @@ impl App {
             history: Vec::new(),
             character_index: 0,
             state: vec![],
+            subs: vec![],
+            ids: vec![],
             view: String::new(),
             cursor: 0,
             vertical_scroll: 0,
@@ -127,159 +132,6 @@ impl App {
         self.reset_cursor();
     }
 
-    fn handle_commands(&mut self) -> Result<(), TuiError> {
-        let (cmd, arg) = self.input.split_once(' ').unwrap_or((&self.input, ""));
-        match (cmd, arg) {
-            ("load", path) => {
-                let rocrate = if is_not_url(path) {
-                    let crate_path = if path.ends_with('/') {
-                        PathBuf::from(format!("{}ro-crate-metadata.json", path))
-                    } else {
-                        PathBuf::from(format!("{}/ro-crate-metadata.json", path))
-                    };
-                    rocraters::ro_crate::read::read_crate(&crate_path, 0)
-                } else {
-                    let url = url::Url::parse(path)?;
-                    rocraters::ro_crate::read::load_remote(url, 0)
-                };
-
-                self.state.push((path.to_string(), rocrate?));
-                self.view = "Loaded crate ...".to_string();
-                self.cursor = self.state.len() - 1;
-            }
-            ("ls", _) => {
-                if let Some(rocrate) = self.state.get(self.cursor) {
-                    self.view = serde_json::to_string_pretty(rocrate)?;
-                } else {
-                    return Err(TuiError::NoState);
-                }
-            }
-            ("get", id) => match self.state.get(self.cursor) {
-                Some((_, rocrate)) => match rocrate.get_entity(id) {
-                    Some(entity) => {
-                        self.view = serde_json::to_string_pretty(entity)?;
-                    }
-                    None => {
-                        return Err(TuiError::IdNotFound(id.to_string()));
-                    }
-                },
-                None => {
-                    return Err(TuiError::NoState);
-                }
-            },
-            ("cd", subcrate_id) => {
-                match subcrate_id {
-                    ".." => {
-                        self.view = format!("Changed to upper level");
-                        self.cursor -= 1;
-                    }
-                    "/" => {
-                        self.view = format!("Changed to root level");
-                        self.cursor = 0;
-                    }
-                    _ => {
-                        // TODO: Improve!
-                        // This is only a hacky way of checking if subcrate was already loaded
-                        if let Some(already_loaded_idx) =
-                            self.state.iter().enumerate().find_map(|(idx, (p, _))| {
-                                if p.contains(subcrate_id) {
-                                    Some(idx)
-                                } else {
-                                    None
-                                }
-                            })
-                        {
-                            self.view = format!("Loaded subcrate {subcrate_id}");
-                            self.cursor = already_loaded_idx;
-                            return Ok(());
-                        }
-
-                        let (subdir, subcrate) = if is_not_url(subcrate_id) {
-                            if let Some((upperpath, _)) = self.state.get(self.cursor) {
-                                let (subdir, subpath) = if upperpath.ends_with('/') {
-                                    (
-                                        format!("{upperpath}{subcrate_id}"),
-                                        format!("{upperpath}{subcrate_id}ro-crate-metadata.json"),
-                                    )
-                                } else {
-                                    (
-                                        format!("{upperpath}/{subcrate_id}"),
-                                        format!("{upperpath}/{subcrate_id}/ro-crate-metadata.json",),
-                                    )
-                                };
-                                (
-                                    subdir,
-                                    rocraters::ro_crate::read::read_crate(
-                                        &PathBuf::from(&subpath),
-                                        0,
-                                    ),
-                                )
-                            } else {
-                                return Err(TuiError::IdNotFound(subcrate_id.to_string()));
-                            }
-                        } else {
-                            let url =
-                                url::Url::parse(&format!("{subcrate_id}ro-crate-metadata.json"))?;
-                            (
-                                url.to_string(),
-                                rocraters::ro_crate::read::load_remote(url, 0),
-                            )
-                        };
-                        self.state.push((subdir, subcrate?));
-                        self.view = format!("Loaded subcrate {subcrate_id}");
-                        self.cursor = self.state.len() - 1;
-                    }
-                }
-            }
-            ("pwd", _) => {
-                self.view = match self.state.get(self.cursor) {
-                    Some((p, _)) => p.to_string(),
-                    None => return Err(TuiError::NoState),
-                };
-            }
-            ("help", _) => {
-                self.view = format!(
-                    "Commands:
-  load <url|path>    Load RO-Crate from URL or .zip file
-  ls                 List hasPart of current dataset/folder
-  ls -a              List all entities (data + contextual)
-  get <@id>          Pretty-print JSON for entity
-  cd <id>            Enter subcrate or folder
-  cd ..              Return to parent
-  cd /               Return to root crate
-  pwd                Print current path
-  help               Show this message
-Supported formats:
-  - .zip archives containing ro-crate-metadata.json
-  - Direct URLs to RO-Crate archives
-  - DOIs resolving to Zenodo/similar repositories"
-                );
-            }
-            (cmd, arg) => {
-                self.view = format!(
-                    "Unkown command: {cmd} {arg}
-
-Commands:
-  load <url|path>    Load RO-Crate from URL or .zip file
-  ls                 List hasPart of current dataset/folder
-  ls -a              List all entities (data + contextual)
-  get <@id>          Pretty-print JSON for entity
-  cd <id>            Enter subcrate or folder
-  cd ..              Return to parent
-  cd /               Return to root crate
-  pwd                Print current path
-  help               Show this message
-Supported formats:
-  - .zip archives containing ro-crate-metadata.json
-  - Direct URLs to RO-Crate archives
-  - DOIs resolving to Zenodo/similar repositories"
-                );
-            }
-        };
-
-        Ok(())
-    }
-
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
@@ -341,14 +193,7 @@ Supported formats:
         }
     }
 
-    fn draw(&mut self, frame: &mut Frame) {
-        let vertical = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(3),
-            Constraint::Min(1),
-        ]);
-        let [help_area, input_area, view_area] = vertical.areas(frame.area());
-
+    fn render_help(&self, help_area: Rect, frame: &mut Frame) {
         let (msg, style) = match self.input_mode {
             InputMode::Normal => (
                 vec![
@@ -393,7 +238,9 @@ Supported formats:
         let text = Text::from(Line::from(msg)).patch_style(style);
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, help_area);
+    }
 
+    fn render_input(&self, input_area: Rect, frame: &mut Frame) {
         let input = Paragraph::new(self.input.as_str())
             .style(match self.input_mode {
                 InputMode::Normal => Style::default(),
@@ -402,6 +249,7 @@ Supported formats:
             })
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
+
         match self.input_mode {
             // Make the cursor visible and ask ratatui to put it at the specified coordinates after
             // rendering
@@ -417,7 +265,9 @@ Supported formats:
             // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
             _ => {}
         }
+    }
 
+    fn render_view(&mut self, view_area: Rect, frame: &mut Frame) {
         let title = format!(
             "Command: {}",
             self.history.last().cloned().unwrap_or(String::new())
@@ -453,5 +303,20 @@ Supported formats:
             view_area,
             &mut self.vertical_scroll_state,
         );
+    }
+
+    fn draw(&mut self, frame: &mut Frame) {
+        let vertical = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ]);
+        let [help_area, input_area, view_area] = vertical.areas(frame.area());
+
+        self.render_help(help_area, frame);
+
+        self.render_input(input_area, frame);
+
+        self.render_view(view_area, frame);
     }
 }
