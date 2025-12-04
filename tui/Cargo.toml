@@ -23,6 +23,7 @@ crossterm = "0.29.0"
 ratatui = "0.29"
 thiserror = { workspace = true }
 rocrate-indexer = { git = "https://github.com/arunaengine/rocrate-indexer.git"}
+syntect = "5.3.0"
 
 [[bin]]
 name = "rocraters"  

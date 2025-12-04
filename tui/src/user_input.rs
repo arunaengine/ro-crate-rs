@@ -1,17 +1,23 @@
-use color_eyre::Result;
+use color_eyre::{owo_colors::OwoColorize, Result};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style, Stylize},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     DefaultTerminal, Frame,
 };
-use rocraters::ro_crate::rocrate::RoCrate;
 use rocrate_indexer::CrateIndex;
+use rocraters::ro_crate::rocrate::RoCrate;
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style as SStyle, ThemeSet};
+use syntect::parsing::SyntaxSet;
+use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
 /// App holds the state of the application
 pub struct App {
+    syntax_set: SyntaxSet,
+    theme_set: ThemeSet,
     pub idxer: CrateIndex,
     /// Current value of the input box
     pub input: String,
@@ -55,8 +61,15 @@ pub enum InputMode {
 impl App {
     pub fn new() -> Self {
         let idxer = rocrate_indexer::CrateIndex::open_or_create().unwrap();
+
+        // Load these once at the start of your program
+        let ps = SyntaxSet::load_defaults_newlines();
+        let ts = ThemeSet::load_defaults();
+
         Self {
-            idxer, 
+            syntax_set: ps,
+            theme_set: ts,
+            idxer,
             input: String::new(),
             input_mode: InputMode::Normal,
             history: Vec::new(),
@@ -308,6 +321,35 @@ impl App {
     }
 
     fn render_view(&mut self, view_area: Rect, frame: &mut Frame) {
+        let syntax = self.syntax_set.find_syntax_by_extension("json").unwrap();
+        let mut h = HighlightLines::new(syntax, &self.theme_set.themes["base16-ocean.dark"]);
+        let mut text = Text::default();
+        for line in LinesWithEndings::from(&self.view) {
+            // LinesWithEndings enables use of newlines mode
+            let ranges: Vec<_> = h
+                .highlight_line(line, &self.syntax_set)
+                .unwrap()
+                .iter()
+                .map(|(synstyle, content)| -> Span {
+                    Span::default().content(*content).style(Style {
+                        fg: Some(Color::Rgb(
+                            synstyle.foreground.r,
+                            synstyle.foreground.g,
+                            synstyle.foreground.b,
+                        )),
+                        bg: None,
+                        ..Default::default()
+                    })
+                })
+                .collect();
+            for span in ranges {
+                text.push_span(span);
+            }
+            text.push_line(Line::from("\n"));
+        }
+
+        //let text = self.view.clone();
+
         let title = format!(
             "Command: {}",
             self.history.last().cloned().unwrap_or(String::new())
@@ -321,17 +363,17 @@ impl App {
 
         let mut horizontal_len = 0;
         let mut vertical_len = 0;
-        for line in self.view.lines() {
+        for line in text.iter() {
             vertical_len += 1;
-            if line.len() > horizontal_len {
-                horizontal_len = line.len()
+            if line.width() > horizontal_len {
+                horizontal_len = line.width()
             };
         }
 
         self.vertical_scroll_state = self.vertical_scroll_state.content_length(vertical_len);
         self.horizontal_scroll_state = self.horizontal_scroll_state.content_length(horizontal_len);
 
-        let view = Paragraph::new(self.view.clone())
+        let view = Paragraph::new(text.clone())
             .block(Block::bordered().title(title).style(style))
             .style(style)
             .scroll((self.vertical_scroll as u16, 0));
