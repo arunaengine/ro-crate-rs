@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
+use ratatui::widgets::ScrollbarState;
 use rocrate_indexer::SearchHit;
 use rocraters::ro_crate::constraints::EntityValue;
 use rocraters::ro_crate::rocrate::RoCrate;
 use rocraters::ro_crate::write::is_not_url;
-use serde::Serialize;
 
 use crate::error::TuiError;
 use crate::user_input::App;
@@ -28,6 +28,10 @@ Supported formats:
 
 impl App {
     pub fn handle_commands(&mut self) -> Result<(), TuiError> {
+        self.vertical_scroll = 0;
+        self.horizontal_scroll = 0;
+        self.vertical_scroll_state = ScrollbarState::default();
+        self.horizontal_scroll_state = ScrollbarState::default();
         let (cmd, arg) = self.input.split_once(' ').unwrap_or((&self.input, ""));
         match (cmd, arg) {
             ("load", path) => {
@@ -89,12 +93,36 @@ impl App {
                     ".." => {
                         self.view = format!("Changed to upper level");
                         self.cursor -= 1;
+                        if let Some((_, rocrate)) = self.state.get(self.cursor) {
+                            self.completion.subs = rocrate
+                                .get_subcrates()
+                                .iter()
+                                .map(|e| e.get_id().clone())
+                                .collect();
+                            self.completion.ids = rocrate
+                                .get_all_ids()
+                                .iter()
+                                .map(|id| id.to_string())
+                                .collect();
+                        }
                     }
                     "/" => {
                         self.view = format!("Changed to root level");
                         self.cursor = 0;
+                        if let Some((_, rocrate)) = self.state.get(self.cursor) {
+                            self.completion.subs = rocrate
+                                .get_subcrates()
+                                .iter()
+                                .map(|e| e.get_id().clone())
+                                .collect();
+                            self.completion.ids = rocrate
+                                .get_all_ids()
+                                .iter()
+                                .map(|id| id.to_string())
+                                .collect();
+                        }
                     }
-                    _ => {
+                    _ if !subcrate_id.is_empty() => {
                         // TODO: Improve!
                         // This is only a hacky way of checking if subcrate was already loaded
                         if let Some(already_loaded_idx) =
@@ -115,6 +143,13 @@ impl App {
 
                         self.import_crate_state(subdir, subcrate)?;
                     }
+                    _ => {
+                            self.view = format!("Missing option. Options are
+..              go one layer up
+/               go to root directory
+<subcrate_id>   change to subdirectory
+");
+                    },
                 }
             }
             ("pwd", _) => {

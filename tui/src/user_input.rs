@@ -1,4 +1,4 @@
-use color_eyre::{owo_colors::OwoColorize, Result};
+use color_eyre::Result;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
@@ -10,9 +10,9 @@ use ratatui::{
 use rocrate_indexer::CrateIndex;
 use rocraters::ro_crate::rocrate::RoCrate;
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style as SStyle, ThemeSet};
+use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use syntect::util::LinesWithEndings;
 
 /// App holds the state of the application
 pub struct App {
@@ -347,8 +347,6 @@ impl App {
             }
             text.push_line(Line::from("\n"));
         }
-
-        //let text = self.view.clone();
 
         let title = format!(
             "Command: {}",
