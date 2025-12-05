@@ -292,7 +292,7 @@ impl RoCrate {
                         if let Some(EntityValue::EntityId(Id::Id(crate_path))) =
                             dynamic.get("conformsTo")
                         {
-                            if crate_path.contains("https://w3id.org/ro/crate/") {
+                            if crate_path.contains("https://w3id.org/ro/crate") {
                                 return Some(entry);
                             }
                         }
