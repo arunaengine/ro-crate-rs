@@ -19,3 +19,5 @@ pub mod rocrate;
 pub mod root;
 pub mod schema;
 pub mod write;
+
+pub mod rdf;
