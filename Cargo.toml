@@ -38,6 +38,7 @@ doctest = false
 
 [features]
 parquet = ["dep:polars"]
+# subcrate-resolution = []
 
 [dependencies]
 serde = { workspace = true }
