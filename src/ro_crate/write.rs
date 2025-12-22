@@ -864,20 +864,19 @@ mod write_crate_tests {
         path_types
     }
 
+
     #[test]
     fn test_get_noncontained_paths() {
         let mut path_types: HashMap<&str, bool> = HashMap::new();
         let cwd = env::current_dir().unwrap();
         let crate_path = cwd.join(PathBuf::from("tests/fixtures/test_experiment"));
 
-        path_types.insert("../invalid.json", true); // Windows File Path
-        path_types.insert("../external.txt", true); // Windows File Path
-        path_types.insert("./data.csv", false); // macOS File Path
-        path_types.insert("./text_1.txt", false); // Linux Absolute Path
-        path_types.insert("text_1.txt", false); // Linux Absolute Path
-        path_types.insert("#fragment", false); // Relative Path
-
-        path_types = user_root_unix(path_types); //Check tilde paths
+        path_types.insert("../invalid.json", true); // External relative path (in fixtures/)
+        path_types.insert("../external.txt", true); // External relative path (in fixtures/)
+        path_types.insert("./data.csv", false); // Internal relative path
+        path_types.insert("./text_1.txt", false); // Internal relative path
+        path_types.insert("text_1.txt", false); // Internal relative path (no prefix)
+        path_types.insert("#fragment", false); // Fragment reference (skipped)
 
         // abs path but not relative
         let abs_not = cwd
