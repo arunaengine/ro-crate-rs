@@ -30,6 +30,9 @@ reqwest = { version = "0.12", features = [
 dirs = "6.0.0"
 polars = { version = "0.52.0", features = ["parquet"] }
 log = "0.4.29"
+sha1 = "0.10.6"
+sha2 = "0.10.9"
+md-5 = "0.10.6"
 
 [lib]
 name = "rocraters"
@@ -53,6 +56,9 @@ reqwest = { workspace = true }
 dirs = { workspace = true }
 polars = { workspace = true, optional = true }
 log = { workspace = true }
+sha1 = { workspace = true}# , optional = true }
+sha2 = { workspace = true}# , optional = true }
+md-5 = { workspace = true}# , optional = true }
 
 [dev-dependencies]
 tempfile = "3.23"
