@@ -58,3 +58,22 @@ oxrdfio = { version = "0.2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.23"
+criterion = "0.8.1"
+
+[[bench]]
+name = "create_and_write"
+harness = false
+
+[[example]]
+name = "create_and_write"
+path = "examples/create_and_write.rs"
+
+[[example]]
+name = "rdf_parse_example"
+path = "examples/rdf_parse_example.rs"
+required-features = ["rdf"]
+
+[[example]]
+name = "rdf_export"
+path = "examples/rdf_export.rs"
+required-features = ["rdf"]
