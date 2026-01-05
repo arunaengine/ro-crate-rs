@@ -8,6 +8,8 @@
 //! ro-crate-rs = { version = "0.4", features = ["rdf"] }
 //! ```
 
+#[cfg(feature = "automerge")]
+pub mod automerge;
 pub mod context;
 pub mod convert;
 pub mod error;
