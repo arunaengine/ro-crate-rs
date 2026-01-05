@@ -36,6 +36,8 @@
 //! let rocrate = rdf_to_rocrate(turtle_data, RdfFormat::Turtle, None)?;
 //! ```
 
+#[cfg(feature = "automerge")]
+pub mod automerge;
 pub mod context;
 pub mod convert;
 pub mod error;
