@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use automerge::sync::SyncDoc;
 use automerge::AutoCommit;
-use autosurgeon::{hydrate as am_hydrate, reconcile as am_reconcile, Hydrate, Reconcile};
+use autosurgeon::{
+    bytes::ByteVec, hydrate as am_hydrate, reconcile as am_reconcile, Hydrate, Reconcile,
+};
 use oxrdf::Triple;
 use thiserror::Error;
 
@@ -21,13 +23,22 @@ use super::{RdfGraph, ResolvedContext};
 /// Uses BTree collections for deterministic ordering, ensuring consistent
 /// serialization across platforms. Uses Vec for objects since autosurgeon
 /// doesn't implement Reconcile/Hydrate for BTreeSet.
-#[derive(Reconcile, Hydrate, Clone, Debug, PartialEq, Default)]
+#[derive(Reconcile, Hydrate, Clone, Debug, PartialEq)]
 pub struct AutomergeRdfGraph {
     /// Entities grouped by subject IRI (N-Triples format string)
     pub entities: BTreeMap<String, BTreeMap<String, Vec<String>>>,
 
-    /// JSON-serialized ResolvedContext as bytes (opaque to avoid text CRDT semantics)
-    pub context: Vec<u8>,
+    /// JSON-serialized ResolvedContext as scalar bytes (avoids per-byte CRDT overhead)
+    pub context: ByteVec,
+}
+
+impl Default for AutomergeRdfGraph {
+    fn default() -> Self {
+        Self {
+            entities: BTreeMap::new(),
+            context: ByteVec::from(Vec::new()),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -79,7 +90,7 @@ pub fn rdf_to_automerge(graph: &RdfGraph) -> Result<AutomergeRdfGraph, Automerge
         })
         .collect();
 
-    let context = serde_json::to_vec(&graph.context)?;
+    let context = ByteVec::from(serde_json::to_vec(&graph.context)?);
 
     Ok(AutomergeRdfGraph { entities, context })
 }
@@ -201,8 +212,10 @@ pub fn sync_documents(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ro_crate::rdf::{
+        rocrate_to_rdf_with_options, ContextResolverBuilder, ConversionOptions,
+    };
     use crate::ro_crate::read::read_crate;
-    use crate::ro_crate::rdf::{rocrate_to_rdf_with_options, ConversionOptions, ContextResolverBuilder};
     use std::path::{Path, PathBuf};
 
     const TEST_BASE: &str = "http://example.org/";
@@ -326,9 +339,17 @@ mod tests {
         let synced_b = hydrate(&doc_b).unwrap();
 
         // Both documents converge after sync
-        assert!(synced_a.entities.contains_key("<http://example.org/sync-a>"));
-        assert!(synced_a.entities.contains_key("<http://example.org/sync-b>"));
-        assert!(synced_b.entities.contains_key("<http://example.org/sync-a>"));
-        assert!(synced_b.entities.contains_key("<http://example.org/sync-b>"));
+        assert!(synced_a
+            .entities
+            .contains_key("<http://example.org/sync-a>"));
+        assert!(synced_a
+            .entities
+            .contains_key("<http://example.org/sync-b>"));
+        assert!(synced_b
+            .entities
+            .contains_key("<http://example.org/sync-a>"));
+        assert!(synced_b
+            .entities
+            .contains_key("<http://example.org/sync-b>"));
     }
 }
