@@ -23,13 +23,15 @@ rand = "0.9"
 url = "2.5"
 zip = "7.0.0"
 walkdir = "2"
-reqwest = { version = "0.12", features = [
-    "blocking",
-    "json",
-], default-features = false }
+reqwest = { version = "0.13", features =  ["blocking", "json"], default-features = false}
 dirs = "6.0.0"
 polars = { version = "0.52.0", features = ["parquet"] }
 log = "0.4.29"
+sha1 = "0.10.6"
+sha2 = "0.10.9"
+hex = "0.4.3"
+bytes = "1.11.0"
+regex = "1.12.2"
 
 [lib]
 name = "rocraters"
@@ -38,6 +40,7 @@ doctest = false
 
 [features]
 parquet = ["dep:polars"]
+subcrate-resolution = ["dep:sha1","dep:sha2","dep:hex","dep:bytes","dep:regex"]
 
 [dependencies]
 serde = { workspace = true }
@@ -52,6 +55,13 @@ reqwest = { workspace = true }
 dirs = { workspace = true }
 polars = { workspace = true, optional = true }
 log = { workspace = true }
+sha1 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+
 
 [dev-dependencies]
 tempfile = "3.23"
+mockito = "1.7.1"

@@ -52,6 +52,8 @@ impl fmt::Display for ContextError {
     }
 }
 
+impl std::error::Error for ContextError {}
+
 impl RoCrateContext {
     /// Adds a new context to the `RoCrateContext`.
     pub fn add_context(&mut self, new_context: &ContextItem) {
