@@ -19,3 +19,6 @@ pub mod rocrate;
 pub mod root;
 pub mod schema;
 pub mod write;
+
+#[cfg(feature = "rdf")]
+pub mod rdf;
