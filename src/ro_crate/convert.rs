@@ -41,16 +41,19 @@ pub fn to_df(rocrate: &RoCrate) -> DataFrame {
     frame_context(&mut crate_frame, &rocrate.context);
     frame_graph(&mut crate_frame, rocrate);
 
-    DataFrame::new(vec![
-        Series::new(
-            "uuid".into(),
-            vec![crate_frame.uuid.clone(); crate_frame.id.len()],
-        )
-        .into(),
-        Series::new("id".into(), crate_frame.id.clone()).into(),
-        Series::new("key".into(), crate_frame.key.clone()).into(),
-        Series::new("value".into(), crate_frame.value.clone()).into(),
-    ])
+    DataFrame::new(
+        crate_frame.id.len(),
+        vec![
+            Series::new(
+                "uuid".into(),
+                vec![crate_frame.uuid.clone(); crate_frame.id.len()],
+            )
+            .into(),
+            Series::new("id".into(), crate_frame.id.clone()).into(),
+            Series::new("key".into(), crate_frame.key.clone()).into(),
+            Series::new("value".into(), crate_frame.value.clone()).into(),
+        ],
+    )
     .unwrap()
 }
 
