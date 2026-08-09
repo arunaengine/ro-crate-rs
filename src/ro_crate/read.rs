@@ -450,9 +450,21 @@ mod tests {
     fn test_read_crate_1_2_success() {
         let path = fixture_path("_ro-crate-metadata-minimal-1_2.json");
 
-        let crate_result = read_crate(&path, 0);
+        let crate_result = read_crate(&path, 2);
         println!("{:?}", crate_result);
         assert!(crate_result.is_ok());
+    }
+
+    #[test]
+    fn test_read_crate_1_3_valid() {
+        let path = fixture_path("_ro-crate-metadata-minimal-1_3.json");
+
+        let rocrate = read_crate(&path, 2).unwrap();
+
+        assert_eq!(
+            rocrate.get_rocrate_version(),
+            Some(crate::ro_crate::schema::RoCrateSchemaVersion::V1_3)
+        );
     }
 
     #[test]
