@@ -11,7 +11,10 @@ use oxrdfio::{RdfFormat as OxRdfFormat, RdfParser, RdfSerializer};
 use super::context::ResolvedContext;
 use super::error::RdfError;
 use super::graph::RdfGraph;
-use super::resolver::ContextResolverBuilder;
+use super::resolver::{
+    ContextResolverBuilder, ROCRATE_1_1_CONTEXT_URL, ROCRATE_1_2_CONTEXT_URL,
+    ROCRATE_1_3_CONTEXT_URL,
+};
 use crate::ro_crate::constraints::{DataType, EntityValue, Id, License};
 use crate::ro_crate::context::RoCrateContext;
 use crate::ro_crate::contextual_entity::ContextualEntity;
@@ -20,11 +23,14 @@ use crate::ro_crate::graph_vector::GraphVector;
 use crate::ro_crate::metadata_descriptor::MetadataDescriptor;
 use crate::ro_crate::rocrate::RoCrate;
 use crate::ro_crate::root::RootDataEntity;
+use crate::ro_crate::schema::RoCrateSchemaVersion;
 
 const RDF_TYPE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const SCHEMA_ABOUT_IRI: &str = "http://schema.org/about";
+const SCHEMA_CONFORMS_TO_IRI: &str = "http://schema.org/conformsTo";
 const SCHEMA_DATASET_IRI: &str = "http://schema.org/Dataset";
-const ROCRATE_CONTEXT_IRI: &str = "https://w3id.org/ro/crate/1.2/context";
+const DCT_CONFORMS_TO_IRI: &str = "http://purl.org/dc/terms/conformsTo";
+const ROCRATE_CONTEXT_IRI: &str = ROCRATE_1_3_CONTEXT_URL;
 
 const XSD_STRING: &str = "http://www.w3.org/2001/XMLSchema#string";
 const XSD_BOOLEAN: &str = "http://www.w3.org/2001/XMLSchema#boolean";
@@ -121,6 +127,50 @@ fn parse_rdf(input: &str, format: RdfFormat, base: Option<&str>) -> Result<Vec<T
                 .map_err(|e| RdfError::ParseError(format!("Failed to parse RDF: {}", e)))
         })
         .collect()
+}
+
+fn rocrate_context_iri_from_triples(triples: &[Triple]) -> &'static str {
+    triples
+        .iter()
+        .find_map(|triple| {
+            let NamedOrBlankNode::NamedNode(subject) = &triple.subject else {
+                return None;
+            };
+            if !subject.as_str().contains("ro-crate-metadata.json") {
+                return None;
+            }
+            if triple.predicate.as_str() != DCT_CONFORMS_TO_IRI
+                && triple.predicate.as_str() != SCHEMA_CONFORMS_TO_IRI
+            {
+                return None;
+            }
+
+            let Term::NamedNode(node) = &triple.object else {
+                return None;
+            };
+
+            match node.as_str().trim_end_matches('/') {
+                "https://w3id.org/ro/crate/1.1" | "https://w3id.org/ro/crate/1.1/context" => {
+                    Some(ROCRATE_1_1_CONTEXT_URL)
+                }
+                "https://w3id.org/ro/crate/1.2" | "https://w3id.org/ro/crate/1.2/context" => {
+                    Some(ROCRATE_1_2_CONTEXT_URL)
+                }
+                "https://w3id.org/ro/crate/1.3" | "https://w3id.org/ro/crate/1.3/context" => {
+                    Some(ROCRATE_1_3_CONTEXT_URL)
+                }
+                _ => None,
+            }
+        })
+        .unwrap_or(ROCRATE_CONTEXT_IRI)
+}
+
+fn rocrate_spec_iri(context: &RoCrateContext) -> &'static str {
+    match context.get_schema_version() {
+        Some(RoCrateSchemaVersion::V1_1) => "https://w3id.org/ro/crate/1.1",
+        Some(RoCrateSchemaVersion::V1_2) => "https://w3id.org/ro/crate/1.2",
+        Some(RoCrateSchemaVersion::V1_3) | None => "https://w3id.org/ro/crate/1.3",
+    }
 }
 
 /// Find the metadata descriptor and root data entity IRIs from RDF triples.
@@ -303,6 +353,18 @@ fn collapse_values(values: Vec<EntityValue>) -> Option<EntityValue> {
     }
 }
 
+fn legacy_bioschemas_term(iri: &str) -> Option<&'static str> {
+    match iri {
+        "https://bioschemas.org/ComputationalWorkflow" => Some("ComputationalWorkflow"),
+        "https://bioschemas.org/FormalParameter" => Some("FormalParameter"),
+        "https://bioschemas.org/ComputationalWorkflow#input"
+        | "https://bioschemas.org/properties/input" => Some("input"),
+        "https://bioschemas.org/ComputationalWorkflow#output"
+        | "https://bioschemas.org/properties/output" => Some("output"),
+        _ => None,
+    }
+}
+
 struct ContextCompactor<'a> {
     context: &'a ResolvedContext,
     exact_terms: HashMap<&'a str, &'a str>,
@@ -340,6 +402,8 @@ impl<'a> ContextCompactor<'a> {
 
         let compacted = if let Some(term) = self.exact_terms.get(iri) {
             (*term).to_string()
+        } else if let Some(term) = legacy_bioschemas_term(iri) {
+            term.to_string()
         } else if let Some((prefix, namespace)) = self
             .prefixes
             .iter()
@@ -472,6 +536,7 @@ fn build_metadata_descriptor_from_index(
     metadata_iri: &str,
     root_iri: &str,
     entity: IndexedEntity,
+    default_conforms_to: &str,
     compactor: &mut ContextCompactor<'_>,
 ) -> MetadataDescriptor {
     let mut metadata_properties =
@@ -486,6 +551,14 @@ fn build_metadata_descriptor_from_index(
         })
         .unwrap_or_else(|| Id::Id(root_iri.to_string()));
 
+    let conforms_to = metadata_properties
+        .remove("conformsTo")
+        .and_then(|value| match value {
+            EntityValue::EntityId(id) => Some(id),
+            _ => None,
+        })
+        .unwrap_or_else(|| Id::Id(default_conforms_to.to_string()));
+
     let compacted_id = if metadata_iri.contains("ro-crate-metadata.json") {
         "ro-crate-metadata.json".to_string()
     } else {
@@ -495,7 +568,7 @@ fn build_metadata_descriptor_from_index(
     MetadataDescriptor {
         id: compacted_id,
         type_: metadata_type,
-        conforms_to: Id::Id(ROCRATE_CONTEXT_IRI.to_string()),
+        conforms_to,
         about,
         dynamic_entity: Some(metadata_properties),
     }
@@ -643,6 +716,8 @@ fn rdf_index_to_rocrate_with_context(
 ) -> Result<RoCrate, RdfError> {
     let (metadata_iri, root_iri) = graph_index.find_root_entities()?;
     let reachable_iris = collect_reachable_entities_indexed(&root_iri, &graph_index, &context);
+    let output_context = context.original.clone();
+    let default_conforms_to = rocrate_spec_iri(&output_context);
 
     for iri in graph_index.entities.keys() {
         if iri != &metadata_iri && iri != &root_iri && !reachable_iris.contains(iri) {
@@ -663,6 +738,7 @@ fn rdf_index_to_rocrate_with_context(
                 metadata_iri
             ))
         })?,
+        default_conforms_to,
         &mut compactor,
     );
     let root_entity = build_root_entity_from_index(
@@ -692,7 +768,7 @@ fn rdf_index_to_rocrate_with_context(
     }
 
     Ok(RoCrate {
-        context: RoCrateContext::ReferenceContext(ROCRATE_CONTEXT_IRI.to_string()),
+        context: output_context,
         graph,
     })
 }
@@ -1165,7 +1241,9 @@ pub fn rdf_to_rocrate(
     format: RdfFormat,
     base: Option<&str>,
 ) -> Result<RoCrate, RdfError> {
-    let graph_index = IndexedGraph::from_triples(parse_rdf(input, format, base)?);
+    let triples = parse_rdf(input, format, base)?;
+    let rocrate_context_iri = rocrate_context_iri_from_triples(&triples);
+    let graph_index = IndexedGraph::from_triples(triples);
 
     // Find root entities to infer base IRI
     let (metadata_iri, _) = graph_index.find_root_entities()?;
@@ -1175,8 +1253,8 @@ pub fn rdf_to_rocrate(
         .map(|b| b.to_string())
         .or_else(|| infer_base_from_metadata(&metadata_iri));
 
-    // Create a ResolvedContext with RO-Crate 1.2 default context + base IRI
-    let ro_context = RoCrateContext::ReferenceContext(ROCRATE_CONTEXT_IRI.to_string());
+    // Use the declared RO-Crate context, or the latest version when none is declared.
+    let ro_context = RoCrateContext::ReferenceContext(rocrate_context_iri.to_string());
 
     let resolver = ContextResolverBuilder::default();
     let mut context = resolver
@@ -1775,6 +1853,83 @@ mod tests {
     }
 
     #[test]
+    fn test_compacts_legacy_bioschemas_terms() {
+        let context = RoCrateContext::ReferenceContext(ROCRATE_1_3_CONTEXT_URL.to_string());
+        let resolved = ContextResolverBuilder::default().resolve(&context).unwrap();
+        let mut compactor = ContextCompactor::new(&resolved);
+
+        for (iri, term) in [
+            (
+                "https://bioschemas.org/ComputationalWorkflow",
+                "ComputationalWorkflow",
+            ),
+            ("https://bioschemas.org/FormalParameter", "FormalParameter"),
+            (
+                "https://bioschemas.org/ComputationalWorkflow#input",
+                "input",
+            ),
+            (
+                "https://bioschemas.org/ComputationalWorkflow#output",
+                "output",
+            ),
+            ("https://bioschemas.org/properties/input", "input"),
+            ("https://bioschemas.org/properties/output", "output"),
+        ] {
+            assert_eq!(compactor.compact(iri), term);
+        }
+    }
+
+    #[test]
+    fn test_context_detection_uses_metadata_descriptor() {
+        let turtle = r#"
+            @prefix schema: <http://schema.org/> .
+            @prefix dct: <http://purl.org/dc/terms/> .
+
+            <http://example.org/> a schema:Dataset ;
+                dct:conformsTo <https://w3id.org/ro/crate/1.1> .
+
+            <http://example.org/ro-crate-metadata.json> a schema:CreativeWork ;
+                schema:about <http://example.org/> ;
+                dct:conformsTo <https://w3id.org/ro/crate/1.3> .
+        "#;
+        let triples = parse_rdf(turtle, RdfFormat::Turtle, None).unwrap();
+
+        assert_eq!(
+            rocrate_context_iri_from_triples(&triples),
+            ROCRATE_1_3_CONTEXT_URL
+        );
+    }
+
+    #[test]
+    fn test_rdf_without_version_defaults_to_1_3() {
+        let turtle = r#"
+            @prefix schema: <http://schema.org/> .
+
+            <http://example.org/ro-crate-metadata.json> a schema:CreativeWork ;
+                schema:about <http://example.org/> .
+
+            <http://example.org/> a schema:Dataset ;
+                schema:name "Test Dataset" .
+        "#;
+
+        let rocrate =
+            rdf_to_rocrate(turtle, RdfFormat::Turtle, Some("http://example.org/")).unwrap();
+
+        assert_eq!(
+            rocrate.context.get_schema_version(),
+            Some(RoCrateSchemaVersion::V1_3)
+        );
+        let metadata = rocrate.graph.iter().find_map(|entity| match entity {
+            GraphVector::MetadataDescriptor(metadata) => Some(metadata),
+            _ => None,
+        });
+        assert_eq!(
+            metadata.unwrap().conforms_to,
+            Id::Id("https://w3id.org/ro/crate/1.3".to_string())
+        );
+    }
+
+    #[test]
     fn test_rdf_to_rocrate_with_compaction() {
         let turtle = r#"
             @prefix schema: <http://schema.org/> .
@@ -1880,6 +2035,77 @@ mod tests {
     }
 
     #[test]
+    fn test_rdf_to_rocrate_handles_1_2_bioschemas_iris() {
+        let turtle = r#"
+            @prefix schema: <http://schema.org/> .
+            @prefix dct: <http://purl.org/dc/terms/> .
+
+            <http://example.org/ro-crate-metadata.json> a schema:CreativeWork ;
+                schema:about <http://example.org/> ;
+                dct:conformsTo <https://w3id.org/ro/crate/1.2> .
+
+            <http://example.org/> a schema:Dataset ;
+                schema:name "Workflow crate" ;
+                schema:hasPart <http://example.org/workflow.cwl> .
+
+            <http://example.org/workflow.cwl>
+                a schema:MediaObject,
+                  schema:SoftwareSourceCode,
+                  <https://bioschemas.org/ComputationalWorkflow> ;
+                <https://bioschemas.org/properties/input> <http://example.org/#parameter> .
+
+            <http://example.org/#parameter>
+                a <https://bioschemas.org/FormalParameter> ;
+                schema:name "message" .
+        "#;
+
+        let rocrate =
+            rdf_to_rocrate(turtle, RdfFormat::Turtle, Some("http://example.org/")).unwrap();
+
+        assert_eq!(
+            rocrate.context.get_schema_version(),
+            Some(RoCrateSchemaVersion::V1_2)
+        );
+
+        let metadata = rocrate.graph.iter().find_map(|entity| match entity {
+            GraphVector::MetadataDescriptor(metadata) => Some(metadata),
+            _ => None,
+        });
+        assert_eq!(
+            metadata.unwrap().conforms_to,
+            Id::Id("https://w3id.org/ro/crate/1.2".to_string())
+        );
+
+        let workflow = rocrate.graph.iter().find_map(|entity| match entity {
+            GraphVector::DataEntity(data) if data.id == "./workflow.cwl" => Some(data),
+            _ => None,
+        });
+        let workflow = workflow.unwrap();
+        assert!(match &workflow.type_ {
+            DataType::TermArray(types) => types.contains(&"ComputationalWorkflow".to_string()),
+            _ => false,
+        });
+        assert!(
+            workflow
+                .dynamic_entity
+                .as_ref()
+                .unwrap()
+                .contains_key("input")
+        );
+
+        let parameter = rocrate.graph.iter().find_map(|entity| match entity {
+            GraphVector::ContextualEntity(contextual) if contextual.id == "#parameter" => {
+                Some(contextual)
+            }
+            _ => None,
+        });
+        assert_eq!(
+            parameter.unwrap().type_,
+            DataType::Term("FormalParameter".to_string())
+        );
+    }
+
+    #[test]
     fn test_roundtrip_rocrate_to_rdf_to_rocrate() {
         use crate::ro_crate::rdf::convert::{ConversionOptions, rocrate_to_rdf_with_options};
         use crate::ro_crate::rdf::resolver::ContextResolverBuilder;
@@ -1888,7 +2114,7 @@ mod tests {
         let metadata = MetadataDescriptor {
             id: "ro-crate-metadata.json".to_string(),
             type_: DataType::Term("CreativeWork".to_string()),
-            conforms_to: Id::Id("https://w3id.org/ro/crate/1.2/context".to_string()),
+            conforms_to: Id::Id("https://w3id.org/ro/crate/1.2".to_string()),
             about: Id::Id("./".to_string()),
             dynamic_entity: Some(HashMap::new()),
         };
@@ -1973,7 +2199,7 @@ mod tests {
         let metadata = MetadataDescriptor {
             id: "ro-crate-metadata.json".to_string(),
             type_: DataType::Term("CreativeWork".to_string()),
-            conforms_to: Id::Id("https://w3id.org/ro/crate/1.2/context".to_string()),
+            conforms_to: Id::Id("https://w3id.org/ro/crate/1.2".to_string()),
             about: Id::Id("./".to_string()),
             dynamic_entity: Some(HashMap::new()),
         };
@@ -2024,6 +2250,11 @@ mod tests {
         let restored_crate =
             rdf_graph_to_rocrate(rdf_graph).expect("RDF graph to RO-Crate conversion failed");
 
+        assert_eq!(
+            restored_crate.context.get_schema_version(),
+            Some(RoCrateSchemaVersion::V1_2)
+        );
+
         // Verify context was used for compaction
         let root = restored_crate.graph.iter().find_map(|g| {
             if let GraphVector::RootDataEntity(root) = g {
@@ -2066,6 +2297,10 @@ mod tests {
         assert_eq!(
             metadata.id, "ro-crate-metadata.json",
             "Metadata ID should be compacted"
+        );
+        assert_eq!(
+            metadata.conforms_to,
+            Id::Id("https://w3id.org/ro/crate/1.2".to_string())
         );
 
         assert!(
