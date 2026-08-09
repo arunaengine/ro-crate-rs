@@ -7,7 +7,7 @@ class PyRoCrateContext:
         default RoCrate context creation
         
         :param context: String of context to be created e.g.\
-                        https://w3id.org/ro/crate/1.2/context
+                        https://w3id.org/ro/crate/1.3/context
         """
 
     def from_list(self, context: list) -> "PyRoCrateContext":

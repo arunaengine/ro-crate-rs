@@ -370,7 +370,7 @@ fn create_rocrate_with_context(context_type: ContextType) -> RoCrate {
                 Ok(num) => {
                     if num == 1 {
                         answer.clear();
-                        answer.push_str("https://w3id.org/ro/crate/1.2/context");
+                        answer.push_str("https://w3id.org/ro/crate/1.3/context");
                     }
                 }
                 Err(e) => println!("Error: {}", e),
@@ -431,7 +431,7 @@ fn create_default_crate(mut rocrate: RoCrate) -> RoCrate {
     let description = metadata_descriptor::MetadataDescriptor {
         id: "ro-crate-metadata.json".to_string(),
         type_: DataType::Term("CreativeWork".to_string()),
-        conforms_to: Id::Id("https://w3id.org/ro/crate/1.2".to_string()),
+        conforms_to: Id::Id("https://w3id.org/ro/crate/1.3".to_string()),
         about: Id::Id("./".to_string()),
         dynamic_entity: None,
     };
@@ -771,5 +771,28 @@ fn search_and_print_recursive(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minimal_default_uses_latest_spec() {
+        let rocrate = create_default_crate(RoCrate::default());
+
+        assert_eq!(
+            rocrate.get_rocrate_version(),
+            Some(rocraters::ro_crate::schema::RoCrateSchemaVersion::V1_3)
+        );
+        let metadata = rocrate.graph.iter().find_map(|entity| match entity {
+            GraphVector::MetadataDescriptor(metadata) => Some(metadata),
+            _ => None,
+        });
+        assert_eq!(
+            metadata.unwrap().conforms_to,
+            Id::Id("https://w3id.org/ro/crate/1.3".to_string())
+        );
     }
 }

@@ -20,7 +20,7 @@ such as Polars and DeltaLake.
 
 In this library, the rust type system and the serde library have been leveraged to 
 provide a structured core for handling RO-Crates with robust data handling, built in 
-constraints as per the RO-Crate specification (v1.1) and sufficient flexibilty to add any 
+constraints as per the RO-Crate specifications (v1.1-v1.3) and sufficient flexibilty to add any
 metadata required.
 
 The aim is that for regular, automated and ***consistent*** robotic experiements, this 
@@ -57,5 +57,4 @@ full python implementation.
 
 # Compatability 
 
-RO-Crate v1.1 and v1.2
-
+RO-Crate v1.1, v1.2 and v1.3

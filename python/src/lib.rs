@@ -668,7 +668,7 @@ impl Default for PyRoCrate {
         let mut rocrate = PyRoCrate {
             inner: RoCrate {
                 context: RoCrateContext::ReferenceContext(
-                    "https://w3id.org/ro/crate/1.2/context".to_string(),
+                    "https://w3id.org/ro/crate/1.3/context".to_string(),
                 ),
                 graph: Vec::new(),
             },
@@ -677,7 +677,7 @@ impl Default for PyRoCrate {
         let description = MetadataDescriptor {
             id: "ro-crate-metadata.json".to_string(),
             type_: DataType::Term("CreativeWork".to_string()),
-            conforms_to: Id::Id("https://w3id.org/ro/crate/1.2".to_string()),
+            conforms_to: Id::Id("https://w3id.org/ro/crate/1.3".to_string()),
             about: Id::Id("./".to_string()),
             dynamic_entity: None,
         };
@@ -723,4 +723,27 @@ fn rocraters(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(write_parquet, m)?)?;
     m.add_function(wrap_pyfunction!(prefix_object_id, m)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_uses_latest_spec() {
+        let rocrate = PyRoCrate::default();
+
+        assert_eq!(
+            rocrate.inner.get_rocrate_version(),
+            Some(::rocraters::ro_crate::schema::RoCrateSchemaVersion::V1_3)
+        );
+        let metadata = rocrate.inner.graph.iter().find_map(|entity| match entity {
+            GraphVector::MetadataDescriptor(metadata) => Some(metadata),
+            _ => None,
+        });
+        assert_eq!(
+            metadata.unwrap().conforms_to,
+            Id::Id("https://w3id.org/ro/crate/1.3".to_string())
+        );
+    }
 }
