@@ -53,6 +53,11 @@ name = "rdf_perf"
 harness = false
 required-features = ["rdf"]
 
+[[example]]
+name = "rdf_export"
+path = "examples/rdf_export.rs"
+required-features = ["rdf"]
+
 [features]
 parquet = ["dep:polars"]
 rdf = ["dep:oxrdf", "dep:oxrdfio"]

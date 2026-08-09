@@ -5,14 +5,83 @@
 //! - `WithBase`: Resolves relative IRIs against a base (recommended)
 //! - `AllowRelative`: Passes IRIs through unresolved
 //!
-//! Run: `cargo run --example rdf_export --features rdf`
+//! Run the demo: `cargo run --example rdf_export --features rdf`
+//! Export a crate: `cargo run --example rdf_export --features rdf -- <crate> --format turtle --base <iri>`
 
 #[cfg(feature = "rdf")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    if let Some(input) = args.next() {
+        return export_crate(input, args);
+    }
+
+    run_demo()
+}
+
+#[cfg(feature = "rdf")]
+fn export_crate(
+    input: String,
+    mut args: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use rocraters::ro_crate::rdf::{
+        ContextResolverBuilder, ConversionOptions, RdfFormat, rocrate_to_rdf_with_options,
+    };
+    use rocraters::ro_crate::read::read_crate;
+    use std::io::{Error, ErrorKind};
+    use std::path::PathBuf;
+
+    let mut format = RdfFormat::Turtle;
+    let mut base = None;
+    while let Some(argument) = args.next() {
+        match argument.as_str() {
+            "--format" => {
+                let value = args.next().ok_or_else(|| {
+                    Error::new(ErrorKind::InvalidInput, "--format requires a value")
+                })?;
+                format = match value.as_str() {
+                    "turtle" => RdfFormat::Turtle,
+                    "ntriples" => RdfFormat::NTriples,
+                    "nquads" => RdfFormat::NQuads,
+                    "rdfxml" => RdfFormat::RdfXml,
+                    _ => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            format!("unsupported RDF format: {value}"),
+                        )
+                        .into());
+                    }
+                };
+            }
+            "--base" => {
+                base = Some(args.next().ok_or_else(|| {
+                    Error::new(ErrorKind::InvalidInput, "--base requires a value")
+                })?);
+            }
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("unknown argument: {argument}"),
+                )
+                .into());
+            }
+        }
+    }
+
+    let rocrate = read_crate(&PathBuf::from(input), 0)?;
+    let options = base.map(ConversionOptions::with_base).unwrap_or_default();
+    let rdf_graph =
+        rocrate_to_rdf_with_options(&rocrate, ContextResolverBuilder::default(), options)?;
+    print!("{}", rdf_graph.to_string(format)?);
+
+    Ok(())
+}
+
+#[cfg(feature = "rdf")]
+fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     use rocraters::ro_crate::constraints::{DataType, Id, License};
     use rocraters::ro_crate::metadata_descriptor::MetadataDescriptor;
     use rocraters::ro_crate::rdf::{
-        rocrate_to_rdf_with_options, ContextResolverBuilder, ConversionOptions, RdfFormat,
+        ContextResolverBuilder, ConversionOptions, RdfFormat, rocrate_to_rdf_with_options,
     };
     use rocraters::ro_crate::rocrate::{GraphVector, RoCrate, RoCrateContext};
     use rocraters::ro_crate::root::RootDataEntity;
