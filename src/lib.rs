@@ -1,7 +1,7 @@
 //! # ro-crate-rs
 //!
 //! 'ro-crate-rs' is a rust library for defining RO-Crates
-//! (<https://www.researchobject.org/ro-crate/1.3/>) for research data. It enables
+//! (<https://www.researchobject.org/ro-crate/specification/1.3/>) for research data. It enables
 //! the reading, creation, modification, writing and archiving of ro-crate-metadata.json
 //! files.
 //!

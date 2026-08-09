@@ -1,7 +1,7 @@
 # Overview 
 
 ro-crate-rs is a rust library that aims to provide a robust, portable 
-and scalable solution to dealing [RO-Crates](https://www.researchobject.org/ro-crate/1.3/)
+and scalable solution to dealing [RO-Crates](https://www.researchobject.org/ro-crate/specification/1.3/)
 within the varying software environments that are present across a 
 Synthetic Biology Laboratory stack (it's current focus). 
 This implementation was specifically created to address the challenges of data 
@@ -63,6 +63,7 @@ To compile for testing, use `cargo build` or `cargo build --release` is performa
 
 To compile docs, run `cargo doc --open` and the documentation will open in your
 default browser.
+
 
 
 
