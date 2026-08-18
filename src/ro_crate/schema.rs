@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 pub(crate) const ROCRATE_SCHEMA_1_1: &str = include_str!("../resources/ro_crate_1_1.jsonld");
 pub(crate) const ROCRATE_SCHEMA_1_2: &str = include_str!("../resources/ro_crate_1_2.jsonld");
+pub(crate) const ROCRATE_SCHEMA_1_3: &str = include_str!("../resources/ro_crate_1_3.jsonld");
 
 /// Represents the JSON-LD context of the RO-Crate schema.
 ///
@@ -29,9 +30,11 @@ pub struct RoCrateJSONLDContext {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RoCrateSchemaVersion {
     V1_1,
     V1_2,
+    V1_3,
 }
 
 /// Loads in RO-Crate schema for validation.
@@ -45,6 +48,7 @@ pub fn load_rocrate_schema(
     match version {
         RoCrateSchemaVersion::V1_1 => load_rocrate_schema_from_str(ROCRATE_SCHEMA_1_1),
         RoCrateSchemaVersion::V1_2 => load_rocrate_schema_from_str(ROCRATE_SCHEMA_1_2),
+        RoCrateSchemaVersion::V1_3 => load_rocrate_schema_from_str(ROCRATE_SCHEMA_1_3),
     }
 }
 
@@ -90,5 +94,34 @@ mod tests {
         let context = result.unwrap();
         assert_eq!(context.version, "1.1.3");
         assert!(context.context.contains_key("3DModel"));
+    }
+
+    #[test]
+    fn test_load_rocrate_schema_1_3() {
+        let context = load_rocrate_schema(RoCrateSchemaVersion::V1_3).unwrap();
+
+        assert_eq!(context.id, "https://w3id.org/ro/crate/1.3/context");
+        assert_eq!(context.version, "1.3.0");
+        assert_eq!(
+            context.schema_version,
+            Id::Id("https://schema.org/docs/releases.html#v30.0".to_string())
+        );
+        assert_eq!(
+            context.context.get("ComputationalWorkflow").unwrap(),
+            "https://bioschemas.org/terms/ComputationalWorkflow"
+        );
+        assert_eq!(
+            context.context.get("FormalParameter").unwrap(),
+            "https://bioschemas.org/terms/FormalParameter"
+        );
+        assert_eq!(
+            context.context.get("input").unwrap(),
+            "https://bioschemas.org/terms/input"
+        );
+        assert_eq!(
+            context.context.get("output").unwrap(),
+            "https://bioschemas.org/terms/output"
+        );
+        assert!(context.context.contains_key("pronouns"));
     }
 }

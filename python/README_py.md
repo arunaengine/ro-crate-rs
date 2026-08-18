@@ -1,6 +1,6 @@
 # Overview 
 
-rocraters is a python library that is built upon a rust backend for interfacing with [RO-Crates](https://www.researchobject.org/ro-crate/1.1/). 
+rocraters is a python library that is built upon a rust backend for interfacing with [RO-Crates](https://www.researchobject.org/ro-crate/specification/1.3/).
 This implementation was specifically created to address the challenges of data 
 handling on automated robotic systems within an automated synthetic biology lab,
 however it's noted that this could have more general applicability to other environments.
@@ -38,7 +38,7 @@ To create an empty RO-Crate, you need to do the following:
 from rocraters import PyRoCrateContext, PyRoCrate, read, zip
 
 # Define context
-context = PyRoCrateContext.from_string("https://w3id.org/ro/crate/1.2/context")
+context = PyRoCrateContext.from_string("https://w3id.org/ro/crate/1.3/context")
 
 # Initialise empty crate
 crate = PyRoCrate(context)
@@ -65,7 +65,7 @@ To populate the basic crate, with the essential keys to conform to specification
 descriptor = {
     "type": "CreativeWork",
     "id": "ro-crate-metadata.json",
-    "conformsTo": {"id": "https://w3id.org/ro/crate/1.2"},
+    "conformsTo": {"id": "https://w3id.org/ro/crate/1.3"},
     "about": {"id": "./"},
 }
 

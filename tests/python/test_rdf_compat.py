@@ -132,6 +132,37 @@ def test_minimal_rocrate_1_2_isomorphic():
         )
 
 
+def test_minimal_rocrate_1_3_isomorphic():
+    """
+    Test that minimal RO-Crate 1.3 produces isomorphic RDF graphs.
+    """
+    fixture = FIXTURES_DIR / "_ro-crate-metadata-minimal-1_3.json"
+    assert fixture.exists(), f"Fixture not found: {fixture}"
+
+    # Parse original RO-Crate JSON-LD with rdflib
+    # Use publicID to set base IRI (must match what Rust uses)
+    g_python = Graph()
+    g_python.parse(str(fixture), format="json-ld", publicID="http://example.org/")
+
+    # Generate RDF from Rust
+    turtle_output = run_rdf_export(fixture, format="turtle", base="http://example.org/")
+
+    # Parse Rust-generated RDF with rdflib
+    g_rust = Graph()
+    g_rust.parse(data=turtle_output, format="turtle")
+
+    # Compare graphs
+    if not isomorphic(g_python, g_rust):
+        in_both, only_python, only_rust = graph_diff(g_python, g_rust)
+        pytest.fail(
+            f"Graphs are not isomorphic!\n"
+            f"Triples only in Python graph: {len(list(only_python))}\n"
+            f"Triples only in Rust graph: {len(list(only_rust))}\n"
+            f"\nOnly in Python:\n{list(only_python)[:5]}\n"
+            f"\nOnly in Rust:\n{list(only_rust)[:5]}"
+        )
+
+
 def test_dynamic_rocrate_isomorphic():
     """
     Test that RO-Crate with dynamic properties produces isomorphic RDF graphs.

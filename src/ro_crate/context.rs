@@ -223,6 +223,8 @@ impl RoCrateContext {
                 Some(RoCrateSchemaVersion::V1_1)
             } else if context_url.contains("ro/crate/1.2") {
                 Some(RoCrateSchemaVersion::V1_2)
+            } else if context_url.contains("ro/crate/1.3") {
+                Some(RoCrateSchemaVersion::V1_3)
             } else {
                 None
             }
@@ -294,5 +296,17 @@ mod write_crate_tests {
         let schema_version = rocrate.context.get_schema_version();
 
         assert_eq!(schema_version.unwrap(), schema::RoCrateSchemaVersion::V1_1);
+    }
+
+    #[test]
+    fn test_schema_version_1_3() {
+        let context = super::RoCrateContext::ReferenceContext(
+            "https://w3id.org/ro/crate/1.3/context".to_string(),
+        );
+
+        assert_eq!(
+            context.get_schema_version().unwrap(),
+            schema::RoCrateSchemaVersion::V1_3
+        );
     }
 }

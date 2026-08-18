@@ -1,6 +1,6 @@
 [package]
 name = "ro-crate-rs"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 repository = "https://github.com/intbio-ncl/ro-crate-rs"
 authors = ["Matt Burridge <m.burridge1@newcastle.ac.uk>"]
@@ -51,6 +51,11 @@ harness = false
 [[bench]]
 name = "rdf_perf"
 harness = false
+required-features = ["rdf"]
+
+[[example]]
+name = "rdf_export"
+path = "examples/rdf_export.rs"
 required-features = ["rdf"]
 
 [features]

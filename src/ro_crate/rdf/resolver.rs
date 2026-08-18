@@ -4,7 +4,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use crate::ro_crate::context::{ContextItem, RoCrateContext};
-use crate::ro_crate::schema::{ROCRATE_SCHEMA_1_1, ROCRATE_SCHEMA_1_2, RoCrateSchemaVersion};
+use crate::ro_crate::schema::{
+    ROCRATE_SCHEMA_1_1, ROCRATE_SCHEMA_1_2, ROCRATE_SCHEMA_1_3, RoCrateSchemaVersion,
+};
 
 use super::context::ResolvedContext;
 use super::error::ContextError;
@@ -15,10 +17,13 @@ pub const ROCRATE_1_1_CONTEXT_URL: &str = "https://w3id.org/ro/crate/1.1/context
 /// URL for the RO-Crate 1.2 JSON-LD context.
 pub const ROCRATE_1_2_CONTEXT_URL: &str = "https://w3id.org/ro/crate/1.2/context";
 
+/// URL for the RO-Crate 1.3 JSON-LD context.
+pub const ROCRATE_1_3_CONTEXT_URL: &str = "https://w3id.org/ro/crate/1.3/context";
+
 /// Builder for resolving RO-Crate contexts.
 ///
 /// Resolves an `RoCrateContext` into a `ResolvedContext` in a single pass,
-/// auto-detecting the RO-Crate version (defaulting to 1.2).
+/// auto-detecting the RO-Crate version (defaulting to 1.3).
 pub struct ContextResolverBuilder {
     cache: HashMap<String, CachedContext>,
     allow_remote: bool,
@@ -34,6 +39,7 @@ struct CachedContext {
 
 static ROCRATE_1_1_CACHE: OnceLock<CachedContext> = OnceLock::new();
 static ROCRATE_1_2_CACHE: OnceLock<CachedContext> = OnceLock::new();
+static ROCRATE_1_3_CACHE: OnceLock<CachedContext> = OnceLock::new();
 
 fn builtin_rocrate_context(version: RoCrateSchemaVersion) -> CachedContext {
     match version {
@@ -45,6 +51,11 @@ fn builtin_rocrate_context(version: RoCrateSchemaVersion) -> CachedContext {
         RoCrateSchemaVersion::V1_2 => ROCRATE_1_2_CACHE
             .get_or_init(|| {
                 parse_context_json(ROCRATE_SCHEMA_1_2).expect("valid RO-Crate 1.2 context")
+            })
+            .clone(),
+        RoCrateSchemaVersion::V1_3 => ROCRATE_1_3_CACHE
+            .get_or_init(|| {
+                parse_context_json(ROCRATE_SCHEMA_1_3).expect("valid RO-Crate 1.3 context")
             })
             .clone(),
     }
@@ -90,7 +101,7 @@ impl ContextResolverBuilder {
     /// Resolves an RO-Crate context into a `ResolvedContext`.
     ///
     /// Auto-detects the RO-Crate version from the context URL and preloads
-    /// the appropriate schema. Defaults to 1.2 if no version is detected.
+    /// the appropriate schema. Defaults to 1.3 if no version is detected.
     ///
     /// Consumes the builder and returns the resolved context.
     pub fn resolve(mut self, context: &RoCrateContext) -> Result<ResolvedContext, ContextError> {
@@ -109,7 +120,7 @@ impl ContextResolverBuilder {
     fn preload_rocrate_schema(&mut self, context: &RoCrateContext) {
         let version = context
             .get_schema_version()
-            .unwrap_or(RoCrateSchemaVersion::V1_2);
+            .unwrap_or(RoCrateSchemaVersion::V1_3);
 
         match version {
             RoCrateSchemaVersion::V1_1 => {
@@ -121,6 +132,11 @@ impl ContextResolverBuilder {
                 self.cache
                     .entry(ROCRATE_1_2_CONTEXT_URL.to_string())
                     .or_insert_with(|| builtin_rocrate_context(RoCrateSchemaVersion::V1_2));
+            }
+            RoCrateSchemaVersion::V1_3 => {
+                self.cache
+                    .entry(ROCRATE_1_3_CONTEXT_URL.to_string())
+                    .or_insert_with(|| builtin_rocrate_context(RoCrateSchemaVersion::V1_3));
             }
         }
     }
@@ -343,6 +359,10 @@ mod tests {
         assert!(resolved.terms.contains_key("description"));
         assert!(resolved.terms.contains_key("author"));
         assert!(resolved.terms.contains_key("hasPart"));
+        assert_eq!(
+            resolved.terms.get("input").unwrap(),
+            "https://bioschemas.org/ComputationalWorkflow#input"
+        );
     }
 
     #[test]
@@ -352,10 +372,42 @@ mod tests {
 
         assert!(resolved.terms.contains_key("name"));
         assert!(resolved.terms.contains_key("description"));
+        assert_eq!(
+            resolved.terms.get("ComputationalWorkflow").unwrap(),
+            "https://bioschemas.org/ComputationalWorkflow"
+        );
+        assert_eq!(
+            resolved.terms.get("input").unwrap(),
+            "https://bioschemas.org/properties/input"
+        );
     }
 
     #[test]
-    fn test_default_to_1_2_when_no_version() {
+    fn test_auto_detect_1_3_context() {
+        let context = RoCrateContext::ReferenceContext(ROCRATE_1_3_CONTEXT_URL.to_string());
+        let resolved = ContextResolverBuilder::default().resolve(&context).unwrap();
+
+        assert_eq!(
+            resolved.terms.get("ComputationalWorkflow").unwrap(),
+            "https://bioschemas.org/terms/ComputationalWorkflow"
+        );
+        assert_eq!(
+            resolved.terms.get("FormalParameter").unwrap(),
+            "https://bioschemas.org/terms/FormalParameter"
+        );
+        assert_eq!(
+            resolved.terms.get("input").unwrap(),
+            "https://bioschemas.org/terms/input"
+        );
+        assert_eq!(
+            resolved.terms.get("output").unwrap(),
+            "https://bioschemas.org/terms/output"
+        );
+        assert!(resolved.terms.contains_key("pronouns"));
+    }
+
+    #[test]
+    fn test_default_to_1_3_when_no_version() {
         // Use a custom embedded context with no RO-Crate URL
         let mut embedded = HashMap::new();
         embedded.insert(
@@ -364,8 +416,11 @@ mod tests {
         );
 
         let context = RoCrateContext::EmbeddedContext(vec![embedded]);
-        // This should succeed because 1.2 is preloaded as default
-        let resolved = ContextResolverBuilder::default().resolve(&context).unwrap();
+        let mut builder = ContextResolverBuilder::default();
+        builder.preload_rocrate_schema(&context);
+        assert!(builder.cache.contains_key(ROCRATE_1_3_CONTEXT_URL));
+
+        let resolved = builder.resolve(&context).unwrap();
 
         assert!(resolved.terms.contains_key("customTerm"));
     }
