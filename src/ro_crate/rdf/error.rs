@@ -63,6 +63,8 @@ pub enum RdfError {
     ParseError(String),
     /// Missing root entities.
     MissingRootEntities(String),
+    /// RDF 1.2 triple terms are not supported by RO-Crate RDF conversion.
+    UnsupportedRdfStarTerm,
 }
 
 impl fmt::Display for RdfError {
@@ -73,6 +75,12 @@ impl fmt::Display for RdfError {
             RdfError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
             RdfError::ParseError(msg) => write!(f, "Parse error: {}", msg),
             RdfError::MissingRootEntities(msg) => write!(f, "Missing root entities: {}", msg),
+            RdfError::UnsupportedRdfStarTerm => {
+                write!(
+                    f,
+                    "RDF 1.2 triple terms are not supported by RO-Crate conversion"
+                )
+            }
         }
     }
 }

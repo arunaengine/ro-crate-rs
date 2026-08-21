@@ -269,13 +269,20 @@ struct IndexedGraph {
 }
 
 impl IndexedGraph {
-    fn from_triples<I>(triples: I) -> Self
+    fn from_triples<I>(triples: I) -> Result<Self, RdfError>
     where
         I: IntoIterator<Item = Triple>,
     {
         let mut graph = Self::default();
 
         for triple in triples {
+            if !triple.object.is_named_node()
+                && !triple.object.is_blank_node()
+                && !triple.object.is_literal()
+            {
+                return Err(RdfError::UnsupportedRdfStarTerm);
+            }
+
             let subject = subject_to_string(&triple.subject);
             let predicate = triple.predicate.as_str();
             let entity = graph.entities.entry(subject.clone()).or_default();
@@ -289,8 +296,8 @@ impl IndexedGraph {
                     .properties
                     .entry(predicate.to_string())
                     .or_default()
-                    .push(term_to_entity_value(&triple.object));
-                push_outgoing_ref(&triple.object, &mut entity.outgoing_refs);
+                    .push(term_to_entity_value(&triple.object)?);
+                push_outgoing_ref(&triple.object, &mut entity.outgoing_refs)?;
 
                 if predicate == SCHEMA_ABOUT_IRI
                     && subject.contains("ro-crate-metadata.json")
@@ -303,7 +310,7 @@ impl IndexedGraph {
             }
         }
 
-        graph
+        Ok(graph)
     }
 
     fn find_root_entities(&self) -> Result<(String, String), RdfError> {
@@ -337,12 +344,17 @@ fn subject_to_string(subject: &NamedOrBlankNode) -> String {
     }
 }
 
-fn push_outgoing_ref(term: &Term, outgoing_refs: &mut Vec<String>) {
+// `oxrdf/rdf-12` can be unified from a downstream crate but is not a
+// `ro-crate-rs` feature, so this wildcard must compile in both feature sets.
+#[allow(unreachable_patterns)]
+fn push_outgoing_ref(term: &Term, outgoing_refs: &mut Vec<String>) -> Result<(), RdfError> {
     match term {
         Term::NamedNode(node) => outgoing_refs.push(node.as_str().to_string()),
         Term::BlankNode(node) => outgoing_refs.push(format!("_:{}", node.as_str())),
         Term::Literal(_) => {}
+        _ => return Err(RdfError::UnsupportedRdfStarTerm),
     }
+    Ok(())
 }
 
 fn collapse_values(values: Vec<EntityValue>) -> Option<EntityValue> {
@@ -777,8 +789,11 @@ fn rdf_index_to_rocrate_with_context(
 ///
 /// Typed literals are parsed by datatype; untyped/unknown literals fall back
 /// to lexical heuristics.
-fn term_to_entity_value(term: &Term) -> EntityValue {
-    match term {
+// See `push_outgoing_ref`: a local `cfg(feature = "rdf-12")` cannot observe
+// a downstream-unified OxRDF feature.
+#[allow(unreachable_patterns)]
+fn term_to_entity_value(term: &Term) -> Result<EntityValue, RdfError> {
+    Ok(match term {
         Term::NamedNode(node) => EntityValue::EntityId(Id::Id(node.as_str().to_string())),
         Term::BlankNode(node) => EntityValue::EntityId(Id::Id(format!("_:{}", node.as_str()))),
         Term::Literal(literal) => {
@@ -846,7 +861,8 @@ fn term_to_entity_value(term: &Term) -> EntityValue {
                 _ => parse_literal_heuristically(value_str),
             }
         }
-    }
+        _ => return Err(RdfError::UnsupportedRdfStarTerm),
+    })
 }
 
 /// Parse a literal value using lexical heuristics (fallback for untyped literals).
@@ -898,7 +914,8 @@ fn extract_entity_properties_simple(
 
             // Use full IRI as property name (no compaction needed for traversal)
             let property_name = triple.predicate.as_str().to_string();
-            let value = term_to_entity_value(&triple.object);
+            let value = term_to_entity_value(&triple.object)
+                .expect("test triples do not contain RDF-star terms");
 
             properties.entry(property_name).or_default().push(value);
         }
@@ -1180,7 +1197,7 @@ fn rdf_to_rocrate_with_context<I>(triples: I, context: ResolvedContext) -> Resul
 where
     I: IntoIterator<Item = Triple>,
 {
-    rdf_index_to_rocrate_with_context(IndexedGraph::from_triples(triples), context)
+    rdf_index_to_rocrate_with_context(IndexedGraph::from_triples(triples)?, context)
 }
 
 /// Convert an RdfGraph to a RoCrate structure.
@@ -1243,7 +1260,7 @@ pub fn rdf_to_rocrate(
 ) -> Result<RoCrate, RdfError> {
     let triples = parse_rdf(input, format, base)?;
     let rocrate_context_iri = rocrate_context_iri_from_triples(&triples);
-    let graph_index = IndexedGraph::from_triples(triples);
+    let graph_index = IndexedGraph::from_triples(triples)?;
 
     // Find root entities to infer base IRI
     let (metadata_iri, _) = graph_index.find_root_entities()?;
@@ -1287,6 +1304,28 @@ mod tests {
 
         graph.insert(Triple::new(subject, predicate, object));
         graph
+    }
+
+    #[test]
+    fn rdf_star_term_is_rejected() {
+        let quoted = Triple::new(
+            NamedNode::new_unchecked("urn:test:quoted-subject"),
+            NamedNode::new_unchecked("urn:test:quoted-predicate"),
+            Literal::new_simple_literal("quoted-value"),
+        );
+        let mut graph = RdfGraph::new(ResolvedContext::new(RoCrateContext::ReferenceContext(
+            "https://w3id.org/ro/crate/1.3/context".to_string(),
+        )));
+        graph.insert(Triple::new(
+            NamedNode::new_unchecked("urn:test:subject"),
+            NamedNode::new_unchecked("urn:test:predicate"),
+            Term::from(quoted),
+        ));
+
+        assert!(matches!(
+            rdf_graph_to_rocrate(graph),
+            Err(RdfError::UnsupportedRdfStarTerm)
+        ));
     }
 
     #[test]
@@ -1723,7 +1762,7 @@ mod tests {
         // (new_simple_literal creates xsd:string typed literal in RDF 1.1)
         let literal = Term::Literal(Literal::new_simple_literal("test"));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityString(s) => assert_eq!(s, "test"),
+            Ok(EntityValue::EntityString(s)) => assert_eq!(s, "test"),
             _ => panic!("Expected EntityString"),
         }
 
@@ -1731,7 +1770,7 @@ mod tests {
         // This is the key fix: "42"^^xsd:string should NOT be parsed as integer
         let literal = Term::Literal(Literal::new_simple_literal("42"));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityString(s) => assert_eq!(s, "42"),
+            Ok(EntityValue::EntityString(s)) => assert_eq!(s, "42"),
             _ => panic!("Expected EntityString for '42'^^xsd:string"),
         }
 
@@ -1739,14 +1778,14 @@ mod tests {
         // "true"^^xsd:string should NOT be parsed as boolean
         let literal = Term::Literal(Literal::new_simple_literal("true"));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityString(s) => assert_eq!(s, "true"),
+            Ok(EntityValue::EntityString(s)) => assert_eq!(s, "true"),
             _ => panic!("Expected EntityString for 'true'^^xsd:string"),
         }
 
         // Test named node
         let node = Term::NamedNode(NamedNode::new_unchecked("http://example.org/thing"));
         match term_to_entity_value(&node) {
-            EntityValue::EntityId(Id::Id(s)) => assert_eq!(s, "http://example.org/thing"),
+            Ok(EntityValue::EntityId(Id::Id(s))) => assert_eq!(s, "http://example.org/thing"),
             _ => panic!("Expected EntityId"),
         }
     }
@@ -1763,49 +1802,49 @@ mod tests {
         // Test xsd:integer typed literal
         let literal = Term::Literal(Literal::new_typed_literal("42", xsd_integer.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::Entityi64(i) => assert_eq!(i, 42),
+            Ok(EntityValue::Entityi64(i)) => assert_eq!(i, 42),
             _ => panic!("Expected Entityi64 for '42'^^xsd:integer"),
         }
 
         // Test xsd:boolean typed literal with "true"
         let literal = Term::Literal(Literal::new_typed_literal("true", xsd_boolean.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityBool(b) => assert!(b),
+            Ok(EntityValue::EntityBool(b)) => assert!(b),
             _ => panic!("Expected EntityBool(true) for 'true'^^xsd:boolean"),
         }
 
         // Test xsd:boolean typed literal with "false"
         let literal = Term::Literal(Literal::new_typed_literal("false", xsd_boolean.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityBool(b) => assert!(!b),
+            Ok(EntityValue::EntityBool(b)) => assert!(!b),
             _ => panic!("Expected EntityBool(false) for 'false'^^xsd:boolean"),
         }
 
         // Test xsd:boolean typed literal with "1" (should be true)
         let literal = Term::Literal(Literal::new_typed_literal("1", xsd_boolean.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityBool(b) => assert!(b),
+            Ok(EntityValue::EntityBool(b)) => assert!(b),
             _ => panic!("Expected EntityBool(true) for '1'^^xsd:boolean"),
         }
 
         // Test xsd:boolean typed literal with "0" (should be false)
         let literal = Term::Literal(Literal::new_typed_literal("0", xsd_boolean.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityBool(b) => assert!(!b),
+            Ok(EntityValue::EntityBool(b)) => assert!(!b),
             _ => panic!("Expected EntityBool(false) for '0'^^xsd:boolean"),
         }
 
         // Test xsd:double typed literal
         let literal = Term::Literal(Literal::new_typed_literal("3.14", xsd_double.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::Entityf64(f) => assert!((f - 3.14).abs() < 0.0001),
+            Ok(EntityValue::Entityf64(f)) => assert!((f - 3.14).abs() < 0.0001),
             _ => panic!("Expected Entityf64 for '3.14'^^xsd:double"),
         }
 
         // Test xsd:string explicitly - should NOT parse as number
         let literal = Term::Literal(Literal::new_typed_literal("42", xsd_string.clone()));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityString(s) => assert_eq!(s, "42"),
+            Ok(EntityValue::EntityString(s)) => assert_eq!(s, "42"),
             _ => panic!("Expected EntityString for '42'^^xsd:string"),
         }
     }
@@ -1820,7 +1859,7 @@ mod tests {
             "hello", "en",
         ));
         match term_to_entity_value(&literal) {
-            EntityValue::EntityString(s) => assert_eq!(s, "hello"),
+            Ok(EntityValue::EntityString(s)) => assert_eq!(s, "hello"),
             _ => panic!("Expected EntityString for language-tagged literal"),
         }
     }

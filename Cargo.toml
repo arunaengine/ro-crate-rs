@@ -96,3 +96,4 @@ oxrdfio = { workspace = true, optional = true }
 tempfile = "3.24"
 mockito = "1.7.1"
 criterion = "0.5"
+oxrdfio = { workspace = true, features = ["rdf-12"] }
