@@ -2,6 +2,7 @@
 //!
 //! The RO-Crate version is auto-detected from the context URL.
 //! Requires the `rdf` feature flag.
+//! Enable `rdf-12` to accept and round-trip RDF 1.2 triple terms.
 //!
 //! ```toml
 //! [dependencies]

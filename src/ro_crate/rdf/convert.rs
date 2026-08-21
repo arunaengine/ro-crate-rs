@@ -497,7 +497,8 @@ fn estimate_entity_triples(entity: &GraphVector) -> usize {
 
 /// Converts an RoCrate to RDF triples.
 /// Returns an `RdfGraph` containing the triples and resolved context.
-/// RDF 1.2 Basic `rdf:PropositionForm` encodings are restored to triple terms.
+/// With the `rdf-12` feature, RDF 1.2 Basic `rdf:PropositionForm` encodings are
+/// restored to triple terms.
 pub fn rocrate_to_rdf(
     crate_: &RoCrate,
     resolver: ContextResolverBuilder,
@@ -528,7 +529,11 @@ pub fn rocrate_to_rdf_with_options(
         converter.add_entity_to_graph(entity, &mut graph)?;
     }
 
-    super::rdf_io::decode_rdf12_basic(graph)
+    #[cfg(feature = "rdf-12")]
+    return super::rdf_io::decode_rdf12_basic(graph);
+
+    #[cfg(not(feature = "rdf-12"))]
+    Ok(graph)
 }
 
 /// RDF type predicate IRI (used in tests).

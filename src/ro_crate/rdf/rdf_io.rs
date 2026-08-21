@@ -3,7 +3,11 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-use oxrdf::{BlankNode, NamedNode, NamedOrBlankNode, Term, Triple};
+#[cfg(feature = "rdf-12")]
+use oxrdf::BlankNode;
+#[cfg(any(test, feature = "rdf-12"))]
+use oxrdf::NamedNode;
+use oxrdf::{NamedOrBlankNode, Term, Triple};
 use oxrdfio::{RdfFormat as OxRdfFormat, RdfParser, RdfSerializer};
 
 use super::context::ResolvedContext;
@@ -24,11 +28,15 @@ use crate::ro_crate::root::RootDataEntity;
 use crate::ro_crate::schema::RoCrateSchemaVersion;
 
 const RDF_TYPE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+#[cfg(feature = "rdf-12")]
 const RDF_PROPOSITION_FORM_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#PropositionForm";
+#[cfg(feature = "rdf-12")]
 const RDF_PROPOSITION_FORM_SUBJECT_IRI: &str =
     "http://www.w3.org/1999/02/22-rdf-syntax-ns#propositionFormSubject";
+#[cfg(feature = "rdf-12")]
 const RDF_PROPOSITION_FORM_PREDICATE_IRI: &str =
     "http://www.w3.org/1999/02/22-rdf-syntax-ns#propositionFormPredicate";
+#[cfg(feature = "rdf-12")]
 const RDF_PROPOSITION_FORM_OBJECT_IRI: &str =
     "http://www.w3.org/1999/02/22-rdf-syntax-ns#propositionFormObject";
 const SCHEMA_ABOUT_IRI: &str = "http://schema.org/about";
@@ -81,6 +89,7 @@ impl RdfFormat {
     }
 }
 
+#[cfg(feature = "rdf-12")]
 fn contains_triple_term(term: &Term) -> bool {
     match term {
         Term::Triple(_) => true,
@@ -88,6 +97,7 @@ fn contains_triple_term(term: &Term) -> bool {
     }
 }
 
+#[cfg(feature = "rdf-12")]
 fn is_proposition_form_type(triple: &Triple) -> bool {
     matches!(triple.subject, NamedOrBlankNode::BlankNode(_))
         && triple.predicate.as_str() == RDF_TYPE_IRI
@@ -97,6 +107,7 @@ fn is_proposition_form_type(triple: &Triple) -> bool {
         )
 }
 
+#[cfg(feature = "rdf-12")]
 fn collect_blank_nodes_from_term(term: &Term, blank_nodes: &mut HashSet<String>) {
     match term {
         Term::BlankNode(node) => {
@@ -107,6 +118,7 @@ fn collect_blank_nodes_from_term(term: &Term, blank_nodes: &mut HashSet<String>)
     }
 }
 
+#[cfg(feature = "rdf-12")]
 fn collect_blank_nodes_from_triple(triple: &Triple, blank_nodes: &mut HashSet<String>) {
     if let NamedOrBlankNode::BlankNode(node) = &triple.subject {
         blank_nodes.insert(node.as_str().to_string());
@@ -114,6 +126,7 @@ fn collect_blank_nodes_from_triple(triple: &Triple, blank_nodes: &mut HashSet<St
     collect_blank_nodes_from_term(&triple.object, blank_nodes);
 }
 
+#[cfg(feature = "rdf-12")]
 fn fresh_rdf12_blank_node(blank_nodes: &mut HashSet<String>, next: &mut u64) -> BlankNode {
     loop {
         let id = format!("rdf12t{}", *next);
@@ -124,6 +137,7 @@ fn fresh_rdf12_blank_node(blank_nodes: &mut HashSet<String>, next: &mut u64) -> 
     }
 }
 
+#[cfg(feature = "rdf-12")]
 fn encode_rdf12_triple_term(
     triple: &Triple,
     encoded_terms: &mut HashMap<Triple, BlankNode>,
@@ -173,6 +187,7 @@ fn encode_rdf12_triple_term(
     node
 }
 
+#[cfg(feature = "rdf-12")]
 fn encode_rdf12_basic<I>(triples: I) -> Result<Vec<Triple>, RdfError>
 where
     I: IntoIterator<Item = Triple>,
@@ -219,6 +234,7 @@ where
 }
 
 #[derive(Clone)]
+#[cfg(feature = "rdf-12")]
 struct PropositionForm {
     subject: NamedOrBlankNode,
     predicate: NamedNode,
@@ -226,12 +242,14 @@ struct PropositionForm {
 }
 
 #[derive(Default)]
+#[cfg(feature = "rdf-12")]
 struct PropositionFormComponents {
     subject: Option<NamedOrBlankNode>,
     predicate: Option<NamedNode>,
     object: Option<Term>,
 }
 
+#[cfg(feature = "rdf-12")]
 fn set_proposition_component<T>(
     slot: &mut Option<T>,
     value: T,
@@ -245,6 +263,7 @@ fn set_proposition_component<T>(
     Ok(())
 }
 
+#[cfg(feature = "rdf-12")]
 fn resolve_proposition_form(
     node: &BlankNode,
     forms: &HashMap<BlankNode, PropositionForm>,
@@ -283,6 +302,7 @@ fn resolve_proposition_form(
     Ok(triple)
 }
 
+#[cfg(feature = "rdf-12")]
 pub(super) fn decode_rdf12_basic(graph: RdfGraph) -> Result<RdfGraph, RdfError> {
     let proposition_nodes: HashSet<_> = graph
         .triples
@@ -613,7 +633,11 @@ impl IndexedGraph {
     {
         let mut graph = Self::default();
 
-        for triple in encode_rdf12_basic(triples)? {
+        let triples: Vec<_> = triples.into_iter().collect();
+        #[cfg(feature = "rdf-12")]
+        let triples = encode_rdf12_basic(triples)?;
+
+        for triple in triples {
             let subject = subject_to_string(&triple.subject);
             let predicate = triple.predicate.as_str();
             let entity = graph.entities.entry(subject.clone()).or_default();
@@ -1536,8 +1560,8 @@ where
 /// This function uses the RdfGraph's stored context for IRI compaction,
 /// ensuring that the same context used for RoCrate → RDF conversion
 /// is used for the reverse RDF → RoCrate conversion.
-/// RDF 1.2 triple terms use the information-preserving RDF Basic
-/// `rdf:PropositionForm` encoding inside the JSON-LD-shaped RO-Crate model.
+/// With the `rdf-12` feature, RDF 1.2 triple terms use the information-preserving
+/// RDF Basic `rdf:PropositionForm` encoding inside the JSON-LD-shaped model.
 ///
 /// # Arguments
 ///
@@ -1567,8 +1591,8 @@ pub fn rdf_graph_to_rocrate(graph: RdfGraph) -> Result<RoCrate, RdfError> {
 ///
 /// This is the main entry point for parsing RDF into RO-Crate format.
 /// Implements full entity extraction, graph walking, and entity classification.
-/// RDF 1.2 triple terms are accepted and stored using the RDF Basic
-/// `rdf:PropositionForm` interoperability encoding.
+/// With the `rdf-12` feature, RDF 1.2 triple terms are accepted and stored using
+/// the RDF Basic `rdf:PropositionForm` interoperability encoding.
 ///
 /// # Arguments
 ///
@@ -1625,6 +1649,8 @@ mod tests {
     use super::*;
     use crate::ro_crate::context::RoCrateContext;
     use crate::ro_crate::rdf::context::ResolvedContext;
+    #[cfg(feature = "rdf-12")]
+    use oxrdf::BlankNode;
     use oxrdf::{Literal, NamedNode, Triple};
 
     fn create_test_graph() -> RdfGraph {
@@ -1641,7 +1667,31 @@ mod tests {
         graph
     }
 
+    #[cfg(not(feature = "rdf-12"))]
     #[test]
+    fn rdf12_triple_term_requires_rdf12_feature() {
+        let quoted = Triple::new(
+            NamedNode::new_unchecked("urn:test:quoted-subject"),
+            NamedNode::new_unchecked("urn:test:quoted-predicate"),
+            Literal::new_simple_literal("quoted-value"),
+        );
+        let mut graph = RdfGraph::new(ResolvedContext::new(RoCrateContext::ReferenceContext(
+            "https://w3id.org/ro/crate/1.3/context".to_string(),
+        )));
+        graph.insert(Triple::new(
+            NamedNode::new_unchecked("urn:test:subject"),
+            NamedNode::new_unchecked("urn:test:predicate"),
+            Term::Triple(Box::new(quoted)),
+        ));
+
+        assert!(matches!(
+            rdf_graph_to_rocrate(graph),
+            Err(RdfError::UnsupportedRdfStarTerm)
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "rdf-12")]
     fn rdf12_triple_term_round_trips_through_rocrate() {
         let turtle = r#"
             VERSION "1.2"
@@ -1672,6 +1722,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rdf-12")]
     fn rdf12_basic_encoding_round_trips_nested_reused_terms() {
         let inner = Triple::new(
             NamedNode::new_unchecked("urn:test:inner-subject"),
@@ -1718,6 +1769,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rdf-12")]
     fn rdf12_hybrid_and_malformed_encodings_fail_closed() {
         let proposition = BlankNode::new_unchecked("existing-proposition");
         let full = Triple::new(
