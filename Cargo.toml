@@ -60,7 +60,7 @@ required-features = ["rdf"]
 
 [features]
 parquet = ["dep:polars"]
-rdf = ["dep:oxrdf", "dep:oxrdfio"]
+rdf = ["dep:oxrdf", "dep:oxrdfio", "oxrdf/rdf-12", "oxrdfio/rdf-12"]
 subcrate-resolution = [
     "dep:sha1",
     "dep:sha2",
