@@ -401,7 +401,7 @@ fn try_zip(headers: &HeaderMap, bytes: bytes::Bytes) -> Result<RoCrate, FetchErr
             }
 
             // Try finding rocrate in subdirectories
-            let names: Vec<String> = archive.file_names().map(|e| e.to_string()).collect();
+            let names: Vec<String> = archive.file_names().filter_map(|e| e.ok().map(|n| n.to_string())).collect();
             if let Some(rocrate) = names.iter().find(|x| x.contains("metadata.json")) {
                 let mut file_in_zip = archive.by_name(rocrate)?;
 
